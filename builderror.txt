@@ -1,0 +1,215 @@
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:612:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  612 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:629:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  629 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:644:3: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  644 |   for (int i = 0; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |   ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:612:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  612 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:629:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  629 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:644:3: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  644 |   for (int i = 0; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |   ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:612:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  612 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:629:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  629 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:644:3: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  644 |   for (int i = 0; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |   ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:612:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  612 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:629:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  629 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:644:3: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  644 |   for (int i = 0; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |   ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:612:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  612 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:629:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  629 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:644:3: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  644 |   for (int i = 0; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |   ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:612:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  612 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:629:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  629 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:644:3: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  644 |   for (int i = 0; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |   ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:612:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  612 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:629:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  629 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:644:3: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  644 |   for (int i = 0; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |   ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:612:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  612 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:629:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  629 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:644:3: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  644 |   for (int i = 0; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |   ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:612:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  612 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:629:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  629 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:644:3: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  644 |   for (int i = 0; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |   ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:612:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  612 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:629:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  629 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:644:3: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  644 |   for (int i = 0; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |   ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:612:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  612 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:629:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  629 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:644:3: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  644 |   for (int i = 0; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |   ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:612:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  612 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:629:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  629 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:644:3: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  644 |   for (int i = 0; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |   ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:612:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  612 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:629:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  629 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:644:3: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  644 |   for (int i = 0; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |   ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:612:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  612 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:629:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  629 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |     ^
+[ 35%] Linking CXX static library libvishaya_isolation.a
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:644:3: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  644 |   for (int i = 0; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |   ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:612:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  612 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:629:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  629 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:644:3: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  644 |   for (int i = 0; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |   ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:612:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  612 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:629:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  629 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:644:3: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  644 |   for (int i = 0; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |   ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:612:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  612 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:629:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  629 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:644:3: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  644 |   for (int i = 0; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |   ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:612:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  612 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN; ++i) {
+      |     ^
+/home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya_common.bpf.h:629:5: warning: loop not unrolled: the optimizer was unable to perform the requested transformation; the transformation might be disabled or specified as part of an unsupported transformation ordering [-Wpass-failed=transform-warning]
+  629 |     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
+      |     ^
+[ 35%] Built target vishaya_isolation
+[ 37%] Building CXX object CMakeFiles/isolation_probe.dir/src/isolation/isolation_probe.cpp.o
+87 warnings generated.
+[pass] built /home/bhanuprakasheagala/Documents/vishaya/bpf/vishaya.bpf.o (clang=clang, multiarch=/usr/include/aarch64-linux-gnu)
+[ 37%] Built target bpf_object
+[ 40%] Building CXX object CMakeFiles/vishaya_collector_core.dir/src/decoder/decoder.cpp.o
+[ 43%] Building CXX object CMakeFiles/vishaya_collector_core.dir/src/collector/collector_libbpf.cpp.o
+[ 45%] Building CXX object CMakeFiles/vishaya_collector_core.dir/src/enricher/enricher.cpp.o
+/home/bhanuprakasheagala/Documents/vishaya/src/collector/collector_libbpf.cpp:120:6: warning: ‘void vishaya::collector::{anonymous}::LogSyscallAllowlistPortability(const RuntimeConfig&)’ defined but not used [-Wunused-function]
+  120 | void LogSyscallAllowlistPortability(const RuntimeConfig& cfg) {
+      |      ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[ 48%] Linking CXX static library libvishaya_collector_core.a
+[ 48%] Built target vishaya_collector_core
+[ 51%] Linking CXX static library libvishaya_bundle.a
+[ 51%] Built target vishaya_bundle
+[ 54%] Building CXX object CMakeFiles/vishaya_inspect.dir/src/inspect/files.cpp.o
+[ 56%] Building CXX object CMakeFiles/vishaya_inspect.dir/src/inspect/tree.cpp.o
+[ 59%] Building CXX object CMakeFiles/vishaya_capture.dir/src/capture/event_to_json.cpp.o
+[ 62%] Building CXX object CMakeFiles/vishaya_inspect.dir/src/inspect/network.cpp.o
+[ 64%] Building CXX object CMakeFiles/vishaya_inspect.dir/src/inspect/timeline.cpp.o
+[ 67%] Building CXX object CMakeFiles/vishaya_capture.dir/src/capture/wal_writer.cpp.o
+[ 70%] Building CXX object CMakeFiles/vishaya_capture.dir/src/capture/protocol_decoder.cpp.o
+[ 72%] Building CXX object CMakeFiles/vishaya_capture.dir/src/capture/session.cpp.o
+[ 75%] Building CXX object CMakeFiles/bundle_probe.dir/src/bundle/bundle_probe.cpp.o
+In file included from /home/bhanuprakasheagala/Documents/vishaya/src/capture/session.cpp:1:
+/home/bhanuprakasheagala/Documents/vishaya/src/capture/session.h:66:23: error: ‘Collector’ in namespace ‘vishaya::collector’ does not name a type
+   66 |   vishaya::collector::Collector*   collector_ = nullptr;  // borrowed singleton
+      |                       ^~~~~~~~~
+/home/bhanuprakasheagala/Documents/vishaya/src/capture/session.cpp: In constructor ‘vishaya::capture::Session::Session(const std::string&, uint32_t, uint64_t, bool)’:
+/home/bhanuprakasheagala/Documents/vishaya/src/capture/session.cpp:20:3: error: ‘collector_’ was not declared in this scope; did you mean ‘collector’?
+   20 |   collector_ = vishaya::collector::CreateCollector();
+      |   ^~~~~~~~~~
+      |   collector
+/home/bhanuprakasheagala/Documents/vishaya/src/capture/session.cpp: In member function ‘void vishaya::capture::Session::poll(int)’:
+/home/bhanuprakasheagala/Documents/vishaya/src/capture/session.cpp:83:3: error: ‘collector_’ was not declared in this scope; did you mean ‘collector’?
+   83 |   collector_->PollOnce(timeout_ms);
+      |   ^~~~~~~~~~
+      |   collector
+/home/bhanuprakasheagala/Documents/vishaya/src/capture/session.cpp: In member function ‘void vishaya::capture::Session::stop()’:
+/home/bhanuprakasheagala/Documents/vishaya/src/capture/session.cpp:87:19: error: ‘collector_’ was not declared in this scope; did you mean ‘collector’?
+   87 |   if (started_ && collector_) {
+      |                   ^~~~~~~~~~
+      |                   collector
+gmake[2]: *** [CMakeFiles/vishaya_capture.dir/build.make:118: CMakeFiles/vishaya_capture.dir/src/capture/session.cpp.o] Error 1
+gmake[2]: *** Waiting for unfinished jobs....
+[ 78%] Linking CXX executable isolation_probe
+[ 78%] Built target isolation_probe
+[ 81%] Linking CXX static library libvishaya_inspect.a
+gmake[1]: *** [CMakeFiles/Makefile2:234: CMakeFiles/vishaya_capture.dir/all] Error 2
+gmake[1]: *** Waiting for unfinished jobs....
+[ 83%] Linking CXX executable bundle_probe
+[ 83%] Built target vishaya_inspect
+[ 83%] Built target bundle_probe
+gmake: *** [Makefile:91: all] Error 2
+
