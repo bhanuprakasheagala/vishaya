@@ -274,6 +274,32 @@ struct {
   __type(value, struct network_state_value);
 } network_enter_state SEC(".maps");
 
+/*
+ * Per-CPU scratch for assembling a network_state_value. The struct embeds a full
+ * network_event (~656 bytes total), which exceeds the kernel verifier's 512-byte
+ * per-frame BPF stack limit — building it on the stack makes every network enter
+ * program fail to load, and load is atomic so it would take the whole object
+ * down. We build it in this scratch slot instead and copy it into
+ * network_enter_state. Single entry; the pointer is only used within one handler
+ * invocation (reserve -> populate -> save), so per-CPU reuse is safe.
+ */
+struct {
+  __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+  __uint(max_entries, 1);
+  __type(key, __u32);
+  __type(value, struct network_state_value);
+} network_scratch SEC(".maps");
+
+/* Return a zeroed per-CPU network_state_value scratch slot, or NULL on failure. */
+static __always_inline struct network_state_value* net_state_scratch(void) {
+  __u32 zero = 0;
+  struct network_state_value* s = bpf_map_lookup_elem(&network_scratch, &zero);
+  if (s) {
+    __builtin_memset(s, 0, sizeof(*s));
+  }
+  return s;
+}
+
 struct {
   __uint(type, BPF_MAP_TYPE_HASH);
   __uint(max_entries, STATE_MAP_MAX_ENTRIES);
@@ -608,7 +634,9 @@ static __always_inline void copy_unix_sockaddr_path(const struct sockaddr_un_min
 
   if (un->path[0] == '\0') {
     int has_name = 0;
-#pragma unroll
+    /* Data-dependent break on path_len: not statically unrollable, so keep it a
+     * bounded loop (verifier-supported on 5.3+) and don't ask clang to unroll. */
+#pragma clang loop unroll(disable)
     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN; ++i) {
       if (i >= (__s32)path_len) {
         break;
@@ -625,7 +653,7 @@ static __always_inline void copy_unix_sockaddr_path(const struct sockaddr_un_min
 
     endpoint->path[0] = '@';
     int out_idx = 1;
-#pragma unroll
+#pragma clang loop unroll(disable)
     for (int i = 1; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
       if (i >= (__s32)path_len) {
         break;
@@ -640,7 +668,7 @@ static __always_inline void copy_unix_sockaddr_path(const struct sockaddr_un_min
     return;
   }
 
-#pragma unroll
+#pragma clang loop unroll(disable)
   for (int i = 0; i < VISHAYA_UNIX_PATH_LEN - 1; ++i) {
     if (i >= (__s32)path_len) {
       break;
@@ -664,19 +692,37 @@ struct iovec_min {
   __u64 iov_len;
 };
 
+/*
+ * Mirror of the kernel's 64-bit `struct msghdr` (56 bytes). The trailing
+ * msg_control/msg_controllen/msg_flags fields are unused here but MUST be present
+ * so sizeof(msghdr_min)==56 and, in turn, sizeof(mmsghdr_min)==64 with msg_len at
+ * the correct offset 56. Omitting them (a 32-byte struct) makes the mmsg stride
+ * and msg_len offset wrong — bytes_transferred for sendmmsg/recvmmsg becomes
+ * garbage and every message after the first is misread.
+ */
 struct msghdr_min {
-  __u64 msg_name;
-  __u32 msg_namelen;
-  __u32 pad;
-  __u64 msg_iov;
-  __u64 msg_iovlen;
+  __u64 msg_name;        /* 0  */
+  __u32 msg_namelen;     /* 8  */
+  __u32 pad0;            /* 12 */
+  __u64 msg_iov;         /* 16 */
+  __u64 msg_iovlen;      /* 24 */
+  __u64 msg_control;     /* 32 */
+  __u64 msg_controllen;  /* 40 */
+  __u32 msg_flags;       /* 48 */
+  __u32 pad1;            /* 52 */
 };
 
 struct mmsghdr_min {
-  struct msghdr_min msg_hdr;
-  __u32 msg_len;
-  __u32 pad;
+  struct msghdr_min msg_hdr;  /* 0  (56 bytes) */
+  __u32 msg_len;              /* 56 */
+  __u32 pad;                  /* 60 */
 };
+
+/* Lock the layout so a future field edit can't silently reintroduce the mmsg
+ * stride/offset bug (LP64: both x86_64 and aarch64). 32-bit targets are a known,
+ * documented limitation, not covered here. */
+_Static_assert(sizeof(struct msghdr_min) == 56, "msghdr_min must match 64-bit kernel struct msghdr");
+_Static_assert(sizeof(struct mmsghdr_min) == 64, "mmsghdr_min must match 64-bit kernel struct mmsghdr (msg_len@56)");
 
 static __always_inline __u64 sum_iovec_lengths(const struct iovec_min* iov, __u64 count) {
   __u64 total = 0;
