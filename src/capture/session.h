@@ -16,6 +16,7 @@
 #include "capture/wal_writer.h"
 #include "decoder/decoder.h"
 #include "enricher/enricher.h"
+#include "collector/collector.h"
 
 #include <cstdint>
 #include <memory>
