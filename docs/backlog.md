@@ -1032,3 +1032,126 @@ source/synthetic adjacency). Buffers event lines in memory at finalize — fine 
 captures; consider an external merge sort if captures grow large. Then restore §8.4 to MUST.
 
 **Target files:** `src/bundle/writer.cpp`, `docs/bundle-spec-v0.1.md`.
+
+### R2-10. First real build: missing include + noisy warnings
+
+`DONE` | `HIGH` | `S` | source: first compile on aarch64 Linux (UTM VM)
+
+**Description:** The first actual compile (on ARM Linux) surfaced a pre-existing build blocker
+that no amount of file-by-file static review caught, because the project had never been
+compiled in this session (Linux-only; review host was Windows):
+- **Blocker:** `src/capture/session.h` references `vishaya::collector::Collector*` but never
+  included `collector/collector.h` nor forward-declared it; `session.cpp` includes
+  `session.h` first, so `Collector` was undeclared. This was independent of the Review-2
+  logic changes (the include set was unchanged). **Fix:** added
+  `#include "collector/collector.h"` to `session.h` (header-light — no libbpf).
+- **Warnings (cosmetic):** three `#pragma unroll` loops in the UNIX-sockaddr path copy
+  (`vishaya_common.bpf.h`) can't be unrolled (data-dependent break) → 80+ `-Wpass-failed`
+  warnings. Switched to `#pragma clang loop unroll(disable)` (identical codegen, bounded
+  loop, verifier-fine on 5.3+). Marked the unused inherited `LogSyscallAllowlistPortability`
+  `[[maybe_unused]]`.
+
+**Confirmed good from this build:** the BPF object compiled and built
+(`vishaya.bpf.o`), including the R2-03 exec-capture changes; `vishaya_bundle`,
+`vishaya_inspect`, `vishaya_collector_core`, `isolation_probe`, `bundle_probe` all built —
+so the R2-01/02/04/06/07/08 userspace changes compile. Remaining unverified until a clean
+build completes: `vishaya_capture` (session.cpp) and `vishaya_cli` (capture_cmd.cpp clock
+anchor + dispatcher flag), plus the BPF verifier load at runtime.
+
+**Lesson:** cross-file include-graph / compile-order errors are invisible to per-file logic
+review; they need a real compile. Treat "not compiled" findings (R2-03 especially) as
+unverified until the Linux build + a capture run pass.
+
+**Files:** `src/capture/session.h`, `bpf/vishaya_common.bpf.h`,
+`src/collector/collector_libbpf.cpp`.
+
+---
+
+## Review-3 — external code review (2026-07, aarch64 focus)
+
+An external reviewer flagged a set of issues; all were verified against the code. The two
+gating ones are fixed below; the rest are confirmed and tracked (R3-*).
+
+### R2-11 (C1). Network enter handlers overflowed the 512-byte BPF stack
+
+`DONE` | `CRITICAL` | `M` | source: review-3 (verified)
+
+**Description:** Every `on_sys_enter_*` in `vishaya_network.bpf.c` built
+`struct network_state_value state = {}` (~656 bytes: a full 584-byte `network_event` + 9
+`u64`) on the stack. The kernel verifier's per-frame limit is 512 bytes and all helpers are
+`__always_inline`, so this is one frame → **every network program is rejected at load**, and
+since `bpf_object__load()` is atomic, the whole object fails and capture never runs. The
+`-bpf-stack-size=8192` flag only raises LLVM's compile limit, not the kernel cap — so it
+compiled but never loaded. (The file/syscall paths already avoided this by stashing the
+ringbuf pointer into the map; only network built the struct on the stack — the tell.) This
+was a genuine miss in the Review-2 BPF audit.
+
+**Fix:** Added a per-CPU scratch map `network_scratch` (`BPF_MAP_TYPE_PERCPU_ARRAY`,
+max_entries=1, value=`network_state_value`) + `net_state_scratch()` helper in
+`vishaya_common.bpf.h`. Every enter handler now assembles the state in the scratch slot via
+a pointer (`state->…`, NULL-guarded) instead of a stack struct, then copies it into
+`network_enter_state`. Semantics unchanged; `network_state_value`/`network_event` layouts
+untouched, so userspace decode is unaffected.
+
+**Reviewed:** independent BPF static review + spot-checks — NULL guard at all 23 call sites,
+`memset`/ringbuf→map copy/`map_update` from a PTR_TO_MAP_VALUE all verify, every handler now
+<200 B stack, no residual stack struct, collector needs no change (it resolves maps by name,
+no enumeration). **Load-time verifier pass still to be confirmed on the VM.**
+
+**Files:** `bpf/vishaya_common.bpf.h`, `bpf/vishaya_network.bpf.c`.
+
+### R2-12 (H1). sendmmsg/recvmmsg byte accounting read wrong struct offsets
+
+`DONE` | `HIGH` | `S` | source: review-3 (verified)
+
+**Description:** `struct msghdr_min` omitted `msg_control`/`msg_controllen`/`msg_flags`, so it
+was 32 bytes instead of the real 56. Consequently `mmsghdr_min` was 40 bytes (real: 64) →
+wrong stride (every message after the first read garbage) and `msg_len` was read at offset 32
+instead of 56 (so `bytes_transferred` for sendmmsg/recvmmsg was garbage even for one message).
+Single `sendmsg`/`recvmsg` happened to work because `msg_iov`@16/`msg_iovlen`@24 fall within
+the first 32 bytes.
+
+**Fix:** Expanded `msghdr_min` to the full 56-byte LP64 layout → `mmsghdr_min` is now 64 bytes
+with `msg_len`@56. Added `_Static_assert`s (56/64) to lock the ABI so a future edit can't
+silently reintroduce the bug.
+
+**Reviewed:** offsets verified against kernel `struct msghdr`/`mmsghdr`; downstream
+`sum_mmsghdr_lengths`/`sum_mmsghdr_transfers` and the single-message reads now correct;
+larger stack locals fine now that C1 moved `state` off-stack.
+
+**Files:** `bpf/vishaya_common.bpf.h`.
+
+### R3-remaining. Confirmed review-3 findings (open)
+
+All verified valid; deferred as follow-ups (not blocking the build):
+
+- **H2** `MEDIUM`: `socket_fd_state` keyed by tgid → forked children reading inherited
+  sockets, and pre-existing/`dup`'d fds, are missed for read/write/close/*v/*mmsg. Document;
+  optionally seed inherited fds on fork.
+- **H3** `LOW`: `iovec_min`/`msghdr_min` assume 64-bit userspace → 32-bit (compat) targets
+  misdecode iovec byte counts/pointers. Document limitation.
+- **M1** `HIGH` (chain-of-custody): signing is tamper-evidence, not tamper-proof — pubkey
+  travels in the bundle (attacker can re-sign), and `manifest.json` metadata (host, target
+  sha256, counts, timestamps) is neither signed nor integrity-hashed. Surface pubkey
+  fingerprint at capture; consider signing the manifest and a pinned-key verify option.
+- **M2** `MEDIUM`: `inspect/tree.cpp` `print_node` has no visited-set/depth cap → a crafted
+  cyclic `process_tree.json` stack-overflows the analyzer (bundles are semi-trusted input).
+  Add visited-set + depth bound; reconcile ppid-orphan vs children-edge parentage.
+- **M3** `LOW-MED`: `verify_integrity()` slurps whole entries into memory to hash; stream it
+  (reuse hash.cpp's chunked pattern) for multi-GB captures.
+- **M4** `LOW-MED`: writer uses ustar (8 GB single-file cap); switch to
+  `archive_write_set_format_pax_restricted` for large captures.
+- **M5** `MEDIUM`: enrichment + container-ctx `/proc` reads run in the ring-buffer drain
+  callback → back-pressure/drops under churn. Consider queue+worker if the G-load test shows
+  drops.
+- **M6** `LOW-MED`: microsecond host-wide window between probe attach and `SetTargetCgroup`
+  (map defaults to 0=allow-all). Set `target_cgroup_id` before the attach loop to close it.
+- **M7** `MEDIUM`: no checked-in `.vishaya` fixture, so `tests/` groups D/E skip without root.
+  Ship a sample bundle (or generate via `bundle_probe`); `VISHAYA_TEST_BUNDLE` is already
+  wired.
+- **M8** (info): arm64 has no `sys_exit_vfork` tracepoint → `on_sys_exit_vfork` fails to
+  attach and logs a line; expected, best-effort attach continues. Not a bug.
+- **LOW batch**: dead allowlist maps/gates (return true); unused `network_state_value.sockaddr_len`
+  field; misleading WAL "durability" claim; rename not dir-fsync'd; DNS not decoded over
+  TCP/connected-UDP; silent `MAX_IOVEC_ENTRIES=8` undercount; hardcoded
+  `coverage.network_layers`; `VISHAYA_DEFAULT_BPF_OBJECT` absolute source path (packaging).
