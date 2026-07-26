@@ -880,6 +880,26 @@ static __always_inline struct process_event* reserve_process_event(__u32 kind) {
   ev->parent_comm[0] = '\0';
   ev->start_time_ticks = 0;
 
+  /*
+   * Capture the process start time in-kernel so userspace enrichment has a
+   * race-free reference to detect PID reuse before trusting /proc (a recycled
+   * PID would otherwise graft another process's exe/cwd/cmdline onto this event).
+   *
+   * /proc/<pid>/stat field 22 is task->start_boottime run through the kernel's
+   * nsec_to_clock_t(), i.e. divided by (NSEC_PER_SEC / USER_HZ). USER_HZ is fixed
+   * at 100 on x86_64/arm64, so the divisor is 10,000,000; reproduce that exactly
+   * so the value compares equal to what the enricher reads from /proc.
+   *
+   * CO-RE-guarded: on a kernel that lacks task->start_boottime the field stays 0
+   * and userspace falls back to reading it from /proc, matching prior behaviour
+   * (no regression, and never a load-time relocation failure).
+   */
+  struct task_struct* cur_task = (struct task_struct*)bpf_get_current_task();
+  if (cur_task && bpf_core_field_exists(cur_task->start_boottime)) {
+    __u64 sb_ns = BPF_CORE_READ(cur_task, start_boottime);
+    ev->start_time_ticks = sb_ns / 10000000ULL;
+  }
+
   return ev;
 }
 

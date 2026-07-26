@@ -42,6 +42,17 @@ std::string format_rel(uint64_t delta_ns) {
   return oss.str();
 }
 
+// Extract ts_ns without ever throwing. Used in the sort comparator, where a
+// json::type_error (thrown by .value() on a wrong-typed ts_ns in a hostile
+// bundle) would propagate out of std::stable_sort. Non-numeric/absent → 0.
+uint64_t safe_ts(const nlohmann::json& e) {
+  const auto it = e.find("ts_ns");
+  if (it == e.end() || !it->is_number()) return 0;
+  if (it->is_number_unsigned()) return it->get<uint64_t>();
+  const int64_t v = it->get<int64_t>();
+  return v < 0 ? 0 : static_cast<uint64_t>(v);
+}
+
 std::string one_line_summary(const nlohmann::json& e) {
   const std::string family = e.value("family", "");
   const std::string kind   = e.value("kind", "");
@@ -99,15 +110,15 @@ int run_timeline(const std::string& bundle_path) {
     // across CPUs; a global stable sort gives a true timeline while preserving
     // the order of synthetic events relative to their source (same ts_ns).
     std::vector<nlohmann::json> events;
-    reader.for_each_event([&](const nlohmann::json& e) { events.push_back(e); });
+    reader.for_each_event([&](const nlohmann::json& e) {
+      if (e.is_object()) events.push_back(e);  // ignore non-object lines
+    });
     std::stable_sort(events.begin(), events.end(),
                      [](const nlohmann::json& a, const nlohmann::json& b) {
-                       return a.value("ts_ns", uint64_t{0}) <
-                              b.value("ts_ns", uint64_t{0});
+                       return safe_ts(a) < safe_ts(b);
                      });
 
-    const uint64_t base_ts =
-        events.empty() ? 0 : events.front().value("ts_ns", uint64_t{0});
+    const uint64_t base_ts = events.empty() ? 0 : safe_ts(events.front());
 
     std::cout << "bundle: " << bundle_path << "\n\n";
     std::cout << std::left
@@ -119,34 +130,46 @@ int run_timeline(const std::string& bundle_path) {
               << "DETAIL\n";
     std::cout << std::string(116, '-') << "\n";
 
+    size_t shown = 0, skipped = 0;
     for (const auto& e : events) {
-      const uint64_t ts = e.value("ts_ns", uint64_t{0});
-      std::string tcol;
-      if (have_anchor) {
-        // wall = realtime_anchor + (ts_ns - monotonic_anchor). Signed math so an
-        // event fired microseconds before the anchor sample can't underflow.
-        const int64_t wall =
-            static_cast<int64_t>(cap.clock_realtime_ns) +
-            (static_cast<int64_t>(ts) - static_cast<int64_t>(cap.clock_monotonic_ns));
-        tcol = format_wall_utc(wall < 0 ? 0 : static_cast<uint64_t>(wall));
-      } else {
-        tcol = format_rel(ts >= base_ts ? ts - base_ts : 0);
+      // Skip (don't abort on) a malformed event; extract all fields before output.
+      try {
+        const uint64_t ts = safe_ts(e);
+        std::string tcol;
+        if (have_anchor) {
+          // wall = realtime_anchor + (ts_ns - monotonic_anchor). Signed math so an
+          // event fired microseconds before the anchor sample can't underflow.
+          const int64_t wall =
+              static_cast<int64_t>(cap.clock_realtime_ns) +
+              (static_cast<int64_t>(ts) - static_cast<int64_t>(cap.clock_monotonic_ns));
+          tcol = format_wall_utc(wall < 0 ? 0 : static_cast<uint64_t>(wall));
+        } else {
+          tcol = format_rel(ts >= base_ts ? ts - base_ts : 0);
+        }
+        const int32_t     tgid = e.value("tgid", 0);
+        const std::string comm = e.value("comm", "");
+        const std::string family_kind =
+            e.value("family", "") + ":" + e.value("kind", "");
+        const std::string detail = one_line_summary(e);
+        std::cout << std::left
+                  << std::setw(28) << tcol
+                  << std::setw(8)  << tgid
+                  << std::setw(16) << comm
+                  << std::setw(20) << family_kind
+                  << detail << "\n";
+        ++shown;
+      } catch (const nlohmann::json::exception&) {
+        ++skipped;
       }
-      const std::string family_kind =
-          e.value("family", "") + ":" + e.value("kind", "");
-      std::cout << std::left
-                << std::setw(28) << tcol
-                << std::setw(8)  << e.value("tgid", 0)
-                << std::setw(16) << e.value("comm", "")
-                << std::setw(20) << family_kind
-                << one_line_summary(e) << "\n";
     }
 
     if (events.empty()) {
       std::cout << "(no events)\n";
     } else {
-      std::cout << "\n" << events.size() << " event(s)\n";
+      std::cout << "\n" << shown << " event(s)\n";
     }
+    if (skipped > 0)
+      std::cout << "(" << skipped << " malformed event(s) skipped)\n";
     return 0;
   } catch (const std::exception& e) {
     vishaya::log::error(std::string("timeline failed: ") + e.what());

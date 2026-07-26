@@ -13,10 +13,11 @@
  *   we never silently record unrelated host processes.
  */
 
+#include "collector/collector.h"
+#include "capture/artifact_collector.h"
 #include "capture/wal_writer.h"
 #include "decoder/decoder.h"
 #include "enricher/enricher.h"
-#include "collector/collector.h"
 
 #include <cstdint>
 #include <memory>
@@ -49,6 +50,11 @@ class Session {
   // capture is host-wide (used for backward-compat detection).
   bool cgroup_filter_active() const noexcept { return cgroup_filter_active_; }
 
+  // Attach an artifact collector (borrowed, not owned; must outlive the Session).
+  // When set, file_events observed during poll() feed it candidate paths. Pass
+  // nullptr (the default) to disable artifact capture.
+  void set_artifact_collector(ArtifactCollector* c) noexcept { artifacts_ = c; }
+
   // Poll the BPF ring buffer for up to timeout_ms. Each event surfaced is
   // decoded, enriched, serialized, and appended to the WAL.
   void poll(int timeout_ms);
@@ -67,6 +73,7 @@ class Session {
   vishaya::collector::Collector*   collector_ = nullptr;  // borrowed singleton
   vishaya::collector::Decoder      decoder_;
   vishaya::collector::Enricher     enricher_;
+  ArtifactCollector*         artifacts_ = nullptr;  // borrowed; nullptr = disabled
   uint32_t                   self_tgid_             = 0;
   uint64_t                   events_written_        = 0;
   uint64_t                   events_dropped_        = 0;

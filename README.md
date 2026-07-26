@@ -1,8 +1,8 @@
 # Vishaya
 
-**A portable, verifiable evidence format for Linux process behavior — the PCAP of what a program does.**
+**A verifiable, target-scoped forensic evidence bundle for a single suspect Linux binary.**
 
-Vishaya captures everything a single Linux binary — and every process it spawns — does at the kernel level: processes, files, and network. It packages the whole run into one self-contained, signed `.vishaya` file you can hand to a colleague, archive for years, and re-open with any compatible tool. No agent on the analyst's machine, no database, no cloud.
+Vishaya captures everything a single Linux binary — and every process it spawns — does at the kernel level: processes, files, and network. It packages the whole run into one self-contained, signed `.vishaya` file you can hand to a colleague, archive for years, and re-open — and cryptographically verify — with any compatible tool. No agent on the analyst's machine, no database, no cloud.
 
 *Vishaya* (विषय, Sanskrit — "the subject-matter of investigation").
 
@@ -10,7 +10,7 @@ Vishaya captures everything a single Linux binary — and every process it spawn
 
 ## The idea
 
-`.pcap` did this for network packets: capture once into one portable file, then read it forever with any tool. Vishaya does the same for **process behavior**.
+One command runs a suspect binary inside a scoped boundary and records everything it — and every process it spawns — does at the kernel level, into a single **signed** file. Any machine can open that file later, **verify it wasn't altered**, and inspect it. No agent, no database, no cloud.
 
 ```bash
 # Capture — one command, one file (root required)
@@ -52,14 +52,38 @@ zstd -dc case.vishaya | tar -xO events.ndjson | jq
 
 ---
 
+## Try it now (no root, no build)
+
+The repo ships real sample captures in [`samples/`](samples/). Because a bundle is just
+`tar.zst` + JSON, you can read one with tools you already have:
+
+```bash
+zstd -dc samples/04-http-curl.vishaya | tar -xO events.ndjson | jq
+```
+
+Or, once you've built the CLI:
+
+```bash
+vishaya summary  samples/04-http-curl.vishaya        # one-screen verdict — start here
+vishaya tree     samples/02-shell-pipeline.vishaya   # process tree
+vishaya network  samples/04-http-curl.vishaya        # decoded DNS + HTTP
+vishaya verify   samples/04-http-curl.vishaya        # integrity + signature verdict
+```
+
+`capture` needs root + eBPF; **inspection and verification need neither.** See
+[samples/README.md](samples/README.md).
+
+---
+
 ## What makes it different
 
-Plenty of tools trace Linux processes. The specific combination is the gap Vishaya fills:
+Plenty of tools trace Linux processes, and a portable capture format already exists (Sysdig/CNCF's `.scap`, viewable in Stratoshark). Vishaya's edge isn't "a capture format" — it's the combination none of them offer:
 
-- **Target-scoped, not fleet-wide.** Falco, Tetragon, and Tracee watch every process on every host. Vishaya observes exactly one target and its descendants, filtered at the kernel by cgroup — so a capture is a *case*, not a firehose.
-- **The file is the product.** No database, no SIEM ingest, no service on the analyst's machine. Capture on one host; analyze on another, months later.
-- **Verifiable by default.** Every bundle carries SHA-256 integrity hashes and an Ed25519 signature, both checked when the bundle is opened. Tamper-evident out of the box.
+- **Verifiable evidence, not just telemetry.** Every bundle is SHA-256 integrity-hashed and Ed25519-signed, and the reader checks both when the bundle is opened. `.scap`, Tracee's `--capture`, and CAPE's output are all unsigned. Verifiable *integrity* — not the act of capturing — is what lets you trust an artifact as evidence. (Today's key is self-generated: tamper-evidence + pinned-key verification, not third-party attestation — that's the v1.0 Sigstore milestone.)
+- **Target-scoped, not host- or fleet-wide.** Falco, Tetragon, Tracee, and even `.scap` observe the whole host or container. Vishaya observes exactly one target and its descendants, filtered at the kernel by cgroup — so a capture is a *case*, not a firehose.
+- **One self-contained file.** Not a database, not a SIEM stream, not a directory tree keyed to a tool's internal IDs (Tracee's `out/` tree, CAPE's `storage/analyses/<id>/`). One `.vishaya` you hand to a colleague, archive, and re-open years later.
 - **An open format, not a proprietary output.** `.vishaya` is a documented spec, and a bundle is plain `tar.zst` + NDJSON + JSON. Third-party readers are welcome — a 20-line script can read one.
+- **Robust by format.** A flat, append-only NDJSON event log — no deeply nested document to overflow or silently truncate.
 - **eBPF-native, CLI-first. No daemon, no cloud.** Install a binary, run it, get a file. Nothing phones home.
 
 Vishaya is a recorder — not an EDR, a SIEM, or a fleet monitor, and it doesn't try to be.
@@ -105,10 +129,18 @@ sudo ./build/vishaya capture --target /usr/bin/curl \
     --output /tmp/curl.vishaya -- https://example.com
 
 # Inspect the bundle (no root)
+./build/vishaya summary  /tmp/curl.vishaya    # one-screen verdict — start here
 ./build/vishaya tree     /tmp/curl.vishaya
 ./build/vishaya files    /tmp/curl.vishaya
 ./build/vishaya network  /tmp/curl.vishaya
 ./build/vishaya timeline /tmp/curl.vishaya
+
+# Compare two runs of the same sample — what changed? (exit 0 = identical, 1 = differs)
+./build/vishaya diff     run-a.vishaya run-b.vishaya
+
+# Verify integrity + signature (no root); optionally pin the signing key
+./build/vishaya verify   /tmp/curl.vishaya
+./build/vishaya verify   /tmp/curl.vishaya --verify-key <base64-ed25519-pubkey>
 ```
 
 Add `--enable-syscalls` to a capture for raw syscall events (high volume; off by default).
@@ -117,11 +149,18 @@ Add `--enable-syscalls` to a capture for raw syscall events (high volume; off by
 
 ## Status
 
-**v0.1 — pre-release.** The capture pipeline, bundle format, signing/verification, and inspect commands are implemented and documented. The `.vishaya` schema is **not yet frozen** — it evolves additively until **v1.0**, which freezes the format so external tools can rely on it.
+**v0.1 — pre-release.** The capture pipeline, bundle format, signing/verification, and inspect commands are implemented and documented. The `.vishaya` schema isn't frozen yet, but it's **safe to build a reader against today**: within the 0.x series the format is **additive-only** — existing fields, entries, and event kinds won't be removed, renamed, or retyped, only new optional ones added (see the [spec's stability commitment](docs/bundle-spec-v0.1.md)). **v1.0** formally freezes it.
 
 Working today: target-scoped capture (cgroup v2 + mount namespace), process/file/network events, DNS and plaintext-HTTP decoding, bundles signed and verified at load time, and the `tree`/`files`/`network`/`timeline` inspect views. On the roadmap: artifact capture, bundle diffing, HTTPS plaintext via TLS-library uprobes, and a reader SDK — see [roadmap.md](docs/roadmap.md).
 
-**Scope.** The cgroup + mount-namespace boundary prevents *accidental* host contamination; it is **not** a hardened detonation chamber, and a determined adversary with root-adjacent capability can escape it. The default bundle signature uses a locally generated key — it is tamper-evidence, not third-party attestation (keyless/Sigstore attestation is planned). For malware that actively evades sandboxes, use VM/hypervisor-based tooling; Vishaya targets suspicious-but-not-anti-sandbox binaries and lightweight forensic detonation.
+**Honest about scope.** Vishaya is the flight recorder, not the aircraft: it produces the evidence, it does not provide the containment. The cgroup + mount-namespace scope prevents *accidental* host contamination; it is **not** a hardened detonation chamber, and a determined, root-adjacent sample can escape it. For genuinely adversarial malware, run Vishaya **inside a VM/hypervisor sandbox** (a full VM, DRAKVUF, a Cuckoo/CAPE guest) — that's the chamber; Vishaya is the black box inside it. The default bundle signature uses a locally generated key — tamper-evidence + pinned-key verification, not third-party attestation (keyless/Sigstore attestation is the v1.0 milestone).
+
+## Non-goals (permanent)
+
+- Not an EDR, SIEM, or fleet monitor — no runtime alerting, blocking, or policy enforcement
+- No Windows or macOS — Linux only
+- No cloud service, telemetry, or phone-home
+- No kernel module — eBPF only
 
 ## Documentation
 
@@ -131,3 +170,7 @@ Full documentation lives in **[docs/](docs/index.md)**. Good entry points:
 - [vision.md](docs/vision.md) — what Vishaya is, and the deliberate non-goals
 - [bundle-spec-v0.1.md](docs/bundle-spec-v0.1.md) — the `.vishaya` format, for anyone building a reader
 - [roadmap.md](docs/roadmap.md) — what's shipped, what's next, what's out of scope
+
+## License
+
+Kernel-side BPF probes are GPL-2.0 (required by the kernel). Userspace source files carry their individual licenses.

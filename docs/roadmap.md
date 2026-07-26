@@ -4,9 +4,11 @@ What's shipped, what's coming, what's out of scope. Written for potential users 
 
 Dates are intentional targets, not commitments. Everything is best-effort until v1.0.
 
+> **Reprioritized 2026-07 after a positioning research pass** ([research/2026-07-product-positioning.md](research/2026-07-product-positioning.md)). The differentiator is **verifiable + target-scoped + single-file evidence**, not "a portable capture format" (that niche is taken by `.scap`/Stratoshark). So v0.5 now leads with **chain-of-custody hardening** and **STIX export**; SCAP interop is **dropped**; MCP/LLM stay deferred; the web UI is **downgraded** (Stratoshark already owns "Wireshark-for-syscalls").
+
 ## v0.1 — current
 
-**Status:** Complete, code review passed, ready for talk demo.
+**Status:** Builds and runs on Linux (aarch64 verified on a UTM VM); basic capture/inspect confirmed. Post-review fixes landed (exec capture, reader verification, BPF stack + mmsg layout, process-tree, wall-clock timeline). Per-feature status and open correctness/robustness items are tracked in [roadmap-decisions.md](roadmap-decisions.md) (detailed write-ups in [backlog.md](backlog.md)).
 
 Capabilities:
 - Target-scoped capture (cgroup v2 + mount namespace isolation)
@@ -31,17 +33,33 @@ Known limitations:
 
 **Target:** first named IR firm, CERT, or researcher uses Vishaya in an actual investigation.
 
-Additions:
+Additions (ordered by the repositioning — the first two are what make the pitch true):
+
+**Chain-of-custody hardening (priority — makes "verifiable" honest)** — *shipped 2026-07*
+- ✅ Sign the *entire* manifest (`sig.scope="manifest-v1"`), not just the two content hashes, so counts/host/target/timestamps are covered too (legacy two-hash bundles still verify).
+- ✅ Print the signing-key fingerprint at capture time for out-of-band recording.
+- ✅ Dedicated `vishaya verify <bundle>` with a loud, explicit verdict (integrity + signature).
+- ✅ Pinned / trusted-key verification (`vishaya verify --verify-key`), so a consumer can assert *who* signed.
+- Remaining: the key is still self-generated (tamper-evidence, not attestation) — see the v1.0 Sigstore/Rekor milestone.
+
+**STIX 2.x export**
+- `vishaya export --format stix` — emit STIX 2.x Observed-Data / Malware objects.
+- Bridges into existing DFIR/CTI pipelines instead of asking them to adopt a new format. STIX/MAEC is the malware-behavior lingua franca; we export to it rather than invent one.
+- OCSF export is a later maybe, only if a consumer needs it.
+
+**Robustness (talk-worthy)**
+- Regression test + demo: a recursive-fork / high-volume target whose capture stays valid and self-reports drops, where nested-JSON sandboxes silently truncate (arXiv 2511.04472, CVE-2025-61301/-61303). Flat append-only NDJSON is the design property that makes this hold.
 
 **Artifact capture**
 - Files created/modified/deleted by the target are copied to `artifacts/` in the bundle
 - Bounded (configurable size limit per file, total limit per capture)
 - Each artifact has a companion metadata record: original path, size, SHA-256, event ID that created it
 
-**Bundle diffing**
-- `vishaya diff a.vishaya b.vishaya` — structured comparison
-- Shows: processes only in A, processes only in B, files touched by A but not B, network endpoints contacted differently
-- Useful for detecting environment-sensitive malware behavior across runs
+**Bundle diffing** — *shipped 2026-07*
+- ✅ `vishaya diff a.vishaya b.vishaya` — **semantic** comparison (compares behaviour sets, not raw events, so PIDs/timestamps/addresses don't create noise).
+- Shows, per category: executed binaries, files created/deleted/renamed, DNS names, HTTP requests, and network endpoints only-in-A vs only-in-B. Exit 0 = identical, 1 = differs.
+- Useful for detecting environment-sensitive malware behavior across runs.
+- Follow-on (deferred, B-03): a `--normalize` bundle transform for path-randomness canonicalization; the diff already normalizes identifiers by comparing semantic sets.
 
 **DNS + HTTP enhancements**
 - `sendmsg`/`recvmsg` payload capture (adds iovec walking in BPF)
@@ -61,7 +79,7 @@ Additions:
 **Better UX**
 - `vishaya --version` shows tool version + supported schema major
 - `vishaya capture --dry-run` prints what would be captured without running the target
-- `vishaya inspect summary` — one-screen summary of a bundle
+- ✅ `vishaya summary` — one-screen verdict (trust + target + counts + tree + network + files) — *shipped 2026-07*
 - Colored output where appropriate (with `--no-color` opt-out)
 
 **Bundle format extensions**
@@ -99,10 +117,9 @@ Additions:
 - Scan captured artifacts against YARA rule sets during finalize
 - Matches recorded in an `iocs.json` sidecar
 
-**Web UI (optional companion)**
-- Separate project, opt-in install
-- Loads a `.vishaya` bundle and shows process tree, timeline, artifact browser
-- Deliberately optional; CLI remains primary
+**Viewer (downgraded — optional, not a differentiator)**
+- Stratoshark already delivers the "Wireshark-for-syscalls" GUI experience, so a full web UI is not where Vishaya stands out. A *small* static single-file HTML viewer (drop a `.vishaya` in, no server) is the most it's worth — useful for sharing a case with non-CLI colleagues, nothing more.
+- Deliberately optional; CLI remains primary. Do not invest here ahead of chain-of-custody, STIX export, or robustness.
 
 ## v2.0 — ecosystem
 
@@ -110,26 +127,25 @@ Additions:
 
 Deliberately speculative. Things I *might* build if the format catches on:
 
-**MCP server for AI analyst workflows**
+**MCP server for AI analyst workflows** *(deferred — reinforced by 2026-07 research; not where the gap is, and no AI in the v1 line)*
 - Model Context Protocol server exposing `.vishaya` bundles as tools/resources
 - Analysts drop a bundle into Claude Desktop and chat: "what persistence did this establish?"
 - Complementary to the CLI, not a replacement
 
-**LLM-powered summarization**
+**LLM-powered summarization** *(deferred — same reasoning)*
 - Post-capture summary agent that reads the bundle and produces plain-English case notes
 - Marked as best-effort AI output, not authoritative
 
-**Sandbox orchestrator adapters**
+**Sandbox orchestrator adapters** *(kept — genuine distribution channel)*
 - Cuckoo3 / CAPE / custom pipelines can plug in as `.vishaya` producers
 - Adapters live in this repo as optional modules; core stays lean
 
-**Cross-capture correlation**
+**Cross-capture correlation** *(kept)*
 - Given N bundles, find shared indicators (endpoints, tools, TTPs)
 - Useful for tracking a malware family across samples
 
-**SCAP interop (bundle contains embedded `.scap`)**
-- Optionally embed a Sysdig `.scap` inside the bundle for Stratoshark interop
-- Purely additive; existing readers ignore
+**~~SCAP interop (embed `.scap` in the bundle)~~ — DROPPED (2026-07 research)**
+- Embedding a Sysdig `.scap` for Stratoshark interop means competing on the incumbent's own turf for little payoff. Vishaya's value is verifiable + scoped + single-file, not `.scap` compatibility. Cut.
 
 ## Explicitly not planned (ever)
 

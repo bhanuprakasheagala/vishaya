@@ -4,9 +4,10 @@ Sample captures and conference-talk material. Not part of the product; delete fr
 
 ## Contents
 
-- **`produce-samples.sh`** — automation script. Runs vishaya against 7 benign targets and produces `.vishaya` bundles into `samples/`. Idempotent.
+- **`produce-samples.sh`** — automation script. Runs vishaya against 7 benign targets and produces `.vishaya` bundles. Idempotent.
 - **`talk-script.md`** — timed walkthrough for a ~15-minute conference talk with all commands and expected output.
-- **`samples/`** — produced by `produce-samples.sh`. Gitignore this; the bundles are host-specific (hostname, kernel version, timestamps embedded in the manifest).
+- **`demo/samples/`** — ephemeral working output of the script; **gitignored** (host-specific, and a big/noisy set).
+- **`/samples/`** (repo root, **committed**) — a small curated subset kept in the repo as the *try-without-root* fixtures. See [`/samples/README.md`](../samples/README.md). Refresh with `sudo DEMO_DIR=samples ./demo/produce-samples.sh`.
 
 ## Quick start
 

@@ -45,15 +45,23 @@ Process lifecycle events from the `sched_process_*` tracepoints plus clone/vfork
 | `cmdline` | string | Full command line, space-joined, up to `VISHAYA_PATH_LEN` |
 | `cwd` | string | Current working directory at exec time |
 | `parent_comm` | string | Parent process's `comm` |
-| `start_time_ticks` | integer | Process start time in kernel ticks (from `/proc/<pid>/stat` field 22) |
+| `start_time_ticks` | integer | Process start time in boot-based clock ticks, captured in-kernel (equivalent to `/proc/<pid>/stat` field 22) |
 
-**Provenance (exec events).** `filename`, `cmdline`, and `parent_comm` are captured
-in-kernel at exec time from the `sched_process_exec` tracepoint and the current task
-(`mm` argv block, `real_parent->comm`), so they are reliable even for processes that exit
-before userspace enrichment runs. `exec_path`, `cwd`, and `start_time_ticks` are
-best-effort from `/proc/<pid>/…` and may be empty for very short-lived processes (except
-`exec_path`, which falls back to `filename`). `cmdline` is truncated to `VISHAYA_PATH_LEN`
-bytes.
+**Provenance (exec events).** `filename`, `cmdline`, `parent_comm`, and
+`start_time_ticks` are captured in-kernel at exec time from the `sched_process_exec`
+tracepoint and the current task (`mm` argv block, `real_parent->comm`,
+`task->start_boottime`), so they are reliable even for processes that exit before
+userspace enrichment runs. `exec_path` and `cwd` are best-effort from `/proc/<pid>/…`
+and may be empty for very short-lived processes (except `exec_path`, which falls back
+to `filename`). `cmdline` is truncated to `VISHAYA_PATH_LEN` bytes.
+
+**PID-reuse guard.** Because `start_time_ticks` is captured in-kernel at event time,
+userspace enrichment uses it as a race-free reference: before trusting any
+`/proc/<pid>/…` field it re-reads the process's current start time and, if it disagrees
+(the PID was recycled between capture and enrichment), skips the `/proc` reads rather
+than attributing another process's `exec_path`/`cwd`/`cmdline` to this event. On kernels
+without `task->start_boottime` the field is 0 and enrichment falls back to best-effort
+`/proc` reads with no such guard.
 
 Example:
 ```json
@@ -74,6 +82,8 @@ Example:
 File system operations from `openat`, `unlinkat`, `renameat2` syscalls, captured as enter/exit pairs so we get the return value alongside the arguments.
 
 **Kinds:** `openat`, `unlinkat`, `renameat2`.
+
+> These events also drive **artifact capture** (`vishaya capture --capture-artifacts`): a successful `openat` with write intent (`O_CREAT`/`O_WRONLY`/`O_RDWR`) or a `renameat2` destination, at an **absolute** path, marks that file for copying into the bundle's `artifacts/`. See [bundle-spec §5A](bundle-spec-v0.1.md).
 
 | Field | Type | Meaning |
 |---|---|---|

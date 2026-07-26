@@ -171,6 +171,12 @@ std::vector<std::string> try_decode_dns(const network_event& e) {
   const bool is_recv = (e.kind == NETWORK_RECVFROM || e.kind == NETWORK_RECVMSG);
   if (!is_send && !is_recv) return out;
 
+  // v0.1 decodes UDP DNS only. DNS-over-TCP prepends a 2-byte length field that
+  // would misparse as the DNS header (ID/flags), so skip flows we know are TCP.
+  // UNKNOWN transport is still allowed through: an early recvfrom can reach us
+  // before socket-state enrichment has classified the transport (see port note).
+  if (e.transport == NETWORK_TRANSPORT_TCP) return out;
+
   const uint16_t remote_port = static_cast<uint16_t>(e.remote.port);
   const uint16_t local_port  = static_cast<uint16_t>(e.local.port);
   // Match either direction's port 53. UDP transport preferred; be lenient
@@ -258,7 +264,9 @@ std::vector<std::string> try_decode_dns(const network_event& e) {
   data["remote"]    = endpoint_json(e.remote);
   data["dns"]       = std::move(dns);
   env["data"]       = std::move(data);
-  out.push_back(env.dump());
+  // Payload-derived strings (DNS qname, HTTP host/path) can carry non-UTF-8
+  // bytes; use the 'replace' handler so dump() never throws and drops the event.
+  out.push_back(env.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace));
   return out;
 }
 
@@ -341,7 +349,9 @@ std::vector<std::string> try_decode_http(const network_event& e) {
     data["remote"]    = endpoint_json(e.remote);
     data["http"]      = std::move(http);
     env["data"]       = std::move(data);
-    out.push_back(env.dump());
+    // Payload-derived strings (DNS qname, HTTP host/path) can carry non-UTF-8
+  // bytes; use the 'replace' handler so dump() never throws and drops the event.
+  out.push_back(env.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace));
     return out;
   }
 
@@ -389,7 +399,9 @@ std::vector<std::string> try_decode_http(const network_event& e) {
   data["remote"]    = endpoint_json(e.remote);
   data["http"]      = std::move(http);
   env["data"]       = std::move(data);
-  out.push_back(env.dump());
+  // Payload-derived strings (DNS qname, HTTP host/path) can carry non-UTF-8
+  // bytes; use the 'replace' handler so dump() never throws and drops the event.
+  out.push_back(env.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace));
   return out;
 }
 

@@ -39,6 +39,7 @@ struct CoverageInfo {
   std::vector<std::string> families;         // subset of "process","file","network","syscall"
   bool                     syscalls_captured = false;
   std::vector<std::string> network_layers;   // subset of "socket","dns","http","https"
+  bool                     artifacts_captured = false;  // --capture-artifacts was on
 };
 
 struct Counts {
@@ -51,10 +52,20 @@ struct Counts {
 struct Integrity {
   std::string events_sha256;
   std::string process_tree_sha256;
+  // SHA-256 of artifacts.json (the artifact index). "" when artifact capture was
+  // not enabled. Since this lives inside the signed manifest, the signature covers
+  // the index — and the index covers each artifact's content hash.
+  std::string artifacts_index_sha256;
 };
 
 struct BundleSignature {
   std::string algorithm;    // "Ed25519" or "" (empty means unsigned)
+  // What the signature covers:
+  //   "manifest-v1" — the canonical manifest (all fields except `sig`), which
+  //                   transitively covers the content via integrity.*_sha256.
+  //   ""            — legacy: only the two content hashes were signed.
+  // Readers branch on this so old bundles still verify.
+  std::string scope;
   std::string pubkey_b64;   // base64(32-byte Ed25519 raw public key)
   std::string sig_b64;      // base64(64-byte Ed25519 signature)
 };
@@ -93,5 +104,12 @@ std::string manifest_to_json(const Manifest& m);
 // Unknown fields are silently ignored.
 // Throws BundleError on parse errors or version incompatibility.
 Manifest manifest_from_json(const std::string& json);
+
+// Canonical byte string that a "manifest-v1" signature covers: the manifest
+// serialized with the `sig` block excluded. Deterministic (stable key order,
+// compact) so the writer and a reader compute identical bytes from the same
+// Manifest. Because it includes integrity.events_sha256 / process_tree_sha256,
+// signing this transitively covers the captured content as well as all metadata.
+std::string manifest_signing_payload(const Manifest& m);
 
 } // namespace vishaya::bundle

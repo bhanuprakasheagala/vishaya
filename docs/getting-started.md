@@ -68,6 +68,13 @@ Anatomy of that command:
 - `--output /tmp/curl.vishaya` — where the bundle will be written.
 - Everything after `--` — arguments passed to the target binary (in this case, curl's URL).
 
+To also copy the files the target created or modified into the bundle, add
+`--capture-artifacts` (off by default). They're stored content-addressed under
+`artifacts/`, hashed, and integrity-checked by `verify`. Bounds are adjustable:
+`--artifact-max-size`, `--artifact-max-total`, `--artifact-max-count`. Note the
+v0.2 limitation: files the target creates **and deletes** during the run are
+recorded (as `missing_at_finalize`) but their bytes are not extracted.
+
 What Vishaya does under the hood:
 
 1. Creates a fresh cgroup at `/sys/fs/cgroup/vishaya-<uuid>` (root required).
@@ -76,7 +83,7 @@ What Vishaya does under the hood:
 4. Writes the cgroup ID into a BPF map, activating target-scoped filtering (probes now drop events from any other cgroup).
 5. Forks a child, attaches the child to the cgroup, unshares a mount namespace, execs `/usr/bin/curl https://example.com` in the child.
 6. Polls the BPF ring buffer while the target runs, decoding events and appending them to `events.ndjson` in the scratch dir.
-7. When curl exits, drains the ring buffer, reconstructs the process tree, computes integrity hashes, builds the manifest, packs everything into a tar+zstd archive at `/tmp/curl.vishaya.tmp`, fsyncs, and atomic-renames to `/tmp/curl.vishaya`.
+7. When curl exits, drains the ring buffer, reconstructs the process tree, computes integrity hashes, **signs the canonical manifest** (Ed25519), builds the manifest, packs everything into a tar+zstd archive at `/tmp/curl.vishaya.tmp`, fsyncs, and atomic-renames to `/tmp/curl.vishaya`.
 8. Cleans up the cgroup and scratch dir.
 
 You'll see stderr log lines showing each step and a final `bundle: /tmp/curl.vishaya`.
@@ -86,16 +93,24 @@ You'll see stderr log lines showing each step and a final `bundle: /tmp/curl.vis
 None of the inspect subcommands need root — the bundle is a plain file you can read anywhere.
 
 ```bash
+./build/vishaya summary  /tmp/curl.vishaya          # start here
 ./build/vishaya tree     /tmp/curl.vishaya
 ./build/vishaya files    /tmp/curl.vishaya
 ./build/vishaya network  /tmp/curl.vishaya
 ./build/vishaya timeline /tmp/curl.vishaya
+./build/vishaya verify    /tmp/curl.vishaya          # integrity + signature verdict
+./build/vishaya diff      run-a.vishaya run-b.vishaya # what changed between two runs
+./build/vishaya artifacts /tmp/curl.vishaya          # files the target dropped/modified
 ```
 
+- **`summary`** — the one-screen verdict: trust status (integrity + signature), target, event counts, a shallow process tree, notable DNS/HTTP/endpoints, and files created/deleted/renamed. Reach for it first.
 - **`tree`** prints the process lineage rooted at your target, with commands and exit codes.
 - **`files`** prints every file operation (openat / unlinkat / renameat2) with PID, command name, operation, return value, and path.
 - **`network`** prints every network event: socket lifecycle (connect / accept / send / recv), plus decoded DNS queries/answers and plaintext HTTP requests/responses.
-- **`timeline`** prints all events in chronological order — the "everything, in the order it happened" view.
+- **`timeline`** prints all events in chronological order (wall-clock UTC) — the "everything, in the order it happened" view.
+- **`verify`** re-checks the bundle's integrity hashes and Ed25519 signature and prints a verdict; `--verify-key <b64>` additionally requires a specific signing key.
+- **`diff`** semantically compares two bundles (e.g. the same sample run twice) and prints what each did that the other didn't. Exit 0 = identical, 1 = differs.
+- **`artifacts`** lists the files captured into `artifacts/` (content hash, size, status, source path) — present only if the bundle was captured with `--capture-artifacts`. Extract them with `zstd -d < bundle.vishaya | tar -x artifacts/` (files are named by SHA-256).
 
 ## Look inside the bundle by hand
 
@@ -120,7 +135,7 @@ Extract and view the manifest:
 zstd -d < /tmp/curl.vishaya | tar -xO manifest.json | jq
 ```
 
-You'll see the schema version, tool version, kernel/arch/hostname, target binary path + SHA-256, isolation info, event coverage, event counts, and SHA-256 integrity hashes for events.ndjson and process_tree.json.
+You'll see the schema version, tool version, kernel/arch/hostname, target binary path + SHA-256, isolation info, event coverage, event counts, SHA-256 integrity hashes for events.ndjson and process_tree.json, a clock anchor (for wall-clock timestamps), and an Ed25519 signature block.
 
 ## Common issues
 

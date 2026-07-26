@@ -9,6 +9,7 @@
  * - Not thread-safe. One Reader per bundle per thread.
  */
 
+#include "bundle/artifacts.h"
 #include "bundle/manifest.h"
 #include "bundle/process_tree.h"
 
@@ -16,6 +17,7 @@
 #include <nlohmann/json.hpp>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace vishaya::bundle {
 
@@ -24,12 +26,16 @@ namespace vishaya::bundle {
 // verify. An unsigned bundle with matching hashes is `ok()` (signatures are
 // optional per spec §3.2), but callers may still choose to warn on absence.
 struct VerifyReport {
-  bool integrity_ok      = false;  // both content hashes matched the manifest
-  bool signature_present = false;  // manifest carried a signature block
-  bool signature_ok      = false;  // signature verified (only if present)
+  bool integrity_ok       = false;  // both content hashes matched the manifest
+  bool signature_present  = false;  // manifest carried a signature block
+  bool signature_ok       = false;  // signature verified (only if present)
+  // Artifact checks default to true so bundles without artifact capture pass.
+  bool artifacts_index_ok   = true; // artifacts.json matched integrity.artifacts_index_sha256
+  bool artifacts_content_ok = true; // every artifacts/<sha> matched its name + the index
 
   bool ok() const noexcept {
-    return integrity_ok && (!signature_present || signature_ok);
+    return integrity_ok && artifacts_index_ok && artifacts_content_ok &&
+           (!signature_present || signature_ok);
   }
 };
 
@@ -51,6 +57,12 @@ class Reader {
   // cached thereafter. Throws BundleError if process_tree.json is missing or
   // malformed.
   const ProcessTree& process_tree();
+
+  // Returns the captured-artifact index (artifacts.json), parsed on first call
+  // and cached. Empty when the bundle was produced without artifact capture (no
+  // artifacts.json) — that is not an error. Throws BundleError if artifacts.json
+  // is present but malformed.
+  const std::vector<ArtifactRecord>& artifacts();
 
   // Streams events.ndjson through the callback in file order. Each call to cb
   // receives one parsed JSON event. Malformed lines are silently skipped
@@ -74,10 +86,18 @@ class Reader {
   VerifyReport verify();
 
  private:
-  std::string bundle_path_;
-  Manifest    manifest_;
-  ProcessTree process_tree_;
-  bool        process_tree_loaded_ = false;
+  // Verifies artifacts.json integrity and each artifacts/<sha> entry's content
+  // against its name and the index. No-op (leaves report defaults) when the
+  // manifest declares no artifact index. May throw BundleError on archive read
+  // failure (not on a hash mismatch, which sets the report flags false).
+  void verify_artifacts(VerifyReport& report);
+
+  std::string                 bundle_path_;
+  Manifest                    manifest_;
+  ProcessTree                 process_tree_;
+  bool                        process_tree_loaded_ = false;
+  std::vector<ArtifactRecord> artifacts_;
+  bool                        artifacts_loaded_    = false;
 };
 
 } // namespace vishaya::bundle

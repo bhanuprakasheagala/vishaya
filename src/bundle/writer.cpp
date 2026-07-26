@@ -1,5 +1,6 @@
 #include "bundle/writer.h"
 
+#include "bundle/artifacts.h"
 #include "bundle/hash.h"
 #include "bundle/process_tree.h"
 #include "bundle/schema_version.h"
@@ -34,6 +35,16 @@ uint64_t file_size(const std::string& path) {
     throw BundleError("stat failed: " + path + ": " + std::strerror(errno));
   }
   return static_cast<uint64_t>(st.st_size);
+}
+
+// Content-addressed artifact names are 64 lowercase hex chars by construction.
+// Validate defensively before ever building a filesystem path from the value.
+bool is_valid_sha256(const std::string& s) {
+  if (s.size() != 64) return false;
+  for (char c : s) {
+    if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+  }
+  return true;
 }
 
 void add_bytes_entry(archive*           a,
@@ -135,29 +146,42 @@ void write_bundle(WriterInput& input) {
   input.manifest.integrity.events_sha256       = sha256_hex_of_file(events_path);
   input.manifest.integrity.process_tree_sha256 = sha256_hex_of_file(tree_path);
 
-  // 2b. Sign the two integrity hashes. Best-effort: a missing or unreadable key
-  // just means the bundle is unsigned. The signed payload is the two hex digests
-  // separated by a newline — stable, deterministic, and easy to reproduce offline.
+  // 2b. If artifact capture was enabled, serialize the index and hash it now, so
+  //     the signature (which covers the whole manifest) transitively covers the
+  //     artifacts too: manifest → artifacts_index_sha256 → artifacts.json →
+  //     per-file sha256 → artifacts/<sha256> bytes. Empty (feature off) leaves the
+  //     field ""; on-with-zero yields "[]" and its hash — distinguishing the two.
+  std::string artifacts_json;
+  if (input.capture_artifacts_enabled) {
+    artifacts_json = artifacts_to_json(input.artifacts);
+    input.manifest.integrity.artifacts_index_sha256 =
+        sha256_hex_of_bytes(artifacts_json);
+  }
+
+  // 3. Fill in schema/tool identity BEFORE signing, so the signature covers them.
+  input.manifest.schema_version = kSchemaVersion;
+  input.manifest.tool_name      = kToolName;
+  input.manifest.tool_version   = kToolVersion;
+
+  // 4. Sign the canonical manifest (every field except `sig`). This covers all
+  //    metadata AND, via integrity.*_sha256, the captured content. Best-effort:
+  //    a missing/unreadable key just leaves the bundle unsigned but valid.
   {
     std::string pem_key;
     if (load_or_generate_signing_key(pem_key)) {
-      const std::string signed_payload =
-          input.manifest.integrity.events_sha256 + "\n" +
-          input.manifest.integrity.process_tree_sha256 + "\n";
+      const std::string signed_payload = manifest_signing_payload(input.manifest);
       input.manifest.sig = sign_data(pem_key, signed_payload);
       if (!input.manifest.sig.algorithm.empty()) {
-        log::info("bundle signed with Ed25519 key (pubkey=" +
-                  input.manifest.sig.pubkey_b64.substr(0, 12) + "...)");
+        input.manifest.sig.scope = "manifest-v1";
+        log::info("bundle signed (Ed25519, scope=manifest-v1, key " +
+                  pubkey_fingerprint(input.manifest.sig.pubkey_b64) + ")");
       }
     } else {
       log::warn("bundle signing skipped: could not load or generate signing key");
     }
   }
 
-  // 3. Fill in schema/tool identity, serialize manifest.
-  input.manifest.schema_version = kSchemaVersion;
-  input.manifest.tool_name      = kToolName;
-  input.manifest.tool_version   = kToolVersion;
+  // 5. Serialize the manifest (now including the signature) and write it.
   const std::string manifest_json = manifest_to_json(input.manifest);
   write_string_to_file(manifest_path, manifest_json);
 
@@ -194,6 +218,16 @@ void write_bundle(WriterInput& input) {
     add_bytes_entry(a, "process_tree.json",
                     tree_json.data(), tree_json.size());
     add_dir_entry(a, "artifacts/");
+    if (input.capture_artifacts_enabled) {
+      add_bytes_entry(a, "artifacts.json",
+                      artifacts_json.data(), artifacts_json.size());
+      for (const ArtifactRecord& r : input.artifacts) {
+        if (r.status != artifact_status::kOk) continue;
+        if (!is_valid_sha256(r.sha256)) continue;  // never build a path from bad text
+        add_file_entry_streaming(a, "artifacts/" + r.sha256,
+                                 input.artifacts_dir + "/" + r.sha256);
+      }
+    }
   } catch (...) {
     archive_write_close(a);
     archive_write_free(a);

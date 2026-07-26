@@ -19,6 +19,7 @@
 #include <ctime>
 #include <fstream>
 #include <iomanip>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <sys/stat.h>
@@ -140,6 +141,12 @@ int run_capture(const CaptureArgs& args) {
     isolation::Cgroup    cgroup;
     log::info("scratch=" + scratch.path() + " cgroup=" + cgroup.path());
 
+    // Artifact capture (opt-in). The collector observes file_events during poll
+    // and copies survivors after the target exits. Declared before the Session so
+    // it outlives every poll() that feeds it.
+    std::optional<capture::ArtifactCollector> collector;
+    if (args.capture_artifacts) collector.emplace(args.artifact_cfg);
+
     // Session::Session loads the BPF object, attaches probes, then activates
     // cgroup scoping — all before the target is launched below, so the target's
     // first instruction is already inside the scoped, filtered cgroup. If the
@@ -149,6 +156,7 @@ int run_capture(const CaptureArgs& args) {
                              static_cast<uint32_t>(::getpid()),
                              cgroup.id(),
                              args.allow_host_wide);
+    if (collector) session.set_artifact_collector(&*collector);
 
     // Launch target inside isolation (mount ns + cgroup, per v0.1 defaults).
     isolation::LaunchOptions opts;
@@ -183,6 +191,16 @@ int run_capture(const CaptureArgs& args) {
     session.poll(50);
     session.poll(50);
     session.stop();
+
+    // Snapshot surviving artifacts now that the target has exited (files it
+    // created/modified that still exist). See ArtifactCollector::finalize.
+    std::vector<bundle::ArtifactRecord> artifact_records;
+    std::string                         artifacts_dir;
+    if (collector) {
+      artifacts_dir = scratch.path() + "/artifacts";
+      ::mkdir(artifacts_dir.c_str(), 0755);  // spec §2: 0755; EEXIST is harmless
+      artifact_records = collector->finalize(artifacts_dir);
+    }
 
     const std::string ended_at        = iso_now_utc();
     const auto        monotonic_end   = std::chrono::steady_clock::now();
@@ -222,7 +240,20 @@ int run_capture(const CaptureArgs& args) {
     input.manifest.coverage.network_layers    = {"socket", "dns", "http"};
     input.manifest.counts.events_total     = session.events_written();
     input.manifest.counts.events_dropped   = session.events_dropped();
-    input.manifest.counts.artifacts_count  = 0;
+
+    uint64_t ok_artifacts = 0;
+    for (const auto& r : artifact_records)
+      if (r.status == bundle::artifact_status::kOk) ++ok_artifacts;
+    input.manifest.counts.artifacts_count      = ok_artifacts;
+    input.manifest.coverage.artifacts_captured = static_cast<bool>(collector);
+    input.artifacts_dir                        = artifacts_dir;
+    input.capture_artifacts_enabled            = static_cast<bool>(collector);
+    input.artifacts                            = std::move(artifact_records);
+
+    if (collector && collector->candidates_truncated()) {
+      log::warn("artifact candidate limit reached; some created/modified paths "
+                "were not considered for capture");
+    }
 
     bundle::write_bundle(input);
 

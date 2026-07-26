@@ -1,8 +1,10 @@
-# `.vishaya` Bundle Format — Specification v0.1
+# `.vishaya` Bundle Format — Specification (v0.2)
 
-This is the authoritative reference for the `.vishaya` bundle format at version `0.1.0`. It defines exactly what a compliant writer produces and what a compliant reader consumes.
+This is the authoritative reference for the `.vishaya` bundle format at version `0.2.0`. It defines exactly what a compliant writer produces and what a compliant reader consumes.
 
-**Stability:** v0.x is explicitly pre-release. Field additions may occur; field removals or type changes will not. v1.0.0 is the first frozen major.
+> **Changelog.** `0.2.0` (additive, backward-compatible with `0.1.0`) adds optional **artifact capture**: an `artifacts.json` index, `artifacts/<sha256>` file entries, `integrity.artifacts_index_sha256`, and `coverage.artifacts_captured`. A bundle written without `--capture-artifacts` is byte-compatible with `0.1.0`. `0.1` readers open `0.2` bundles (ignoring the new fields); `0.2` readers open `0.1` bundles. (The filename keeps `v0.1` so existing links stay valid.)
+
+**Stability commitment (v0.x).** The format is pre-1.0, but it is **safe to write a reader against today.** Within the 0.x series the format is **additive-only**: existing fields, tar-entry names, event families/kinds, and their types and semantics will **not** be removed, renamed, or retyped — only new *optional* fields, entries, families, or kinds may be added. A reader written against v0.1 keeps working on later 0.x bundles as long as it ignores what it doesn't recognize (§7, §9). v1.0.0 will formally freeze the format; until then, additive-only is the contract the reference implementation holds itself to.
 
 **Reference implementation:** the Vishaya CLI in this repository. Third-party writers/readers may implement this spec independently.
 
@@ -30,12 +32,14 @@ Every bundle contains these entries, at these exact paths:
 manifest.json           # required — always first entry in tar
 events.ndjson           # required
 process_tree.json       # required
-artifacts/              # required directory (may be empty in v0.1)
+artifacts/              # required directory (empty unless artifact capture was enabled)
+artifacts.json          # present only when artifact capture was enabled (0.2.0+)
+artifacts/<sha256>      # zero or more captured files, content-addressed (0.2.0+)
 ```
 
-**Ordering rule:** `manifest.json` MUST be the first entry in the tar stream. This allows streaming readers to validate schema version before decompressing the rest.
+**Ordering rule:** `manifest.json` MUST be the first entry in the tar stream. This allows streaming readers to validate schema version before decompressing the rest. The reference writer emits entries in the order shown: manifest, events, process_tree, the `artifacts/` directory, then — when artifact capture was enabled — `artifacts.json` followed by the `artifacts/<sha256>` files.
 
-**No extra entries** are permitted at the tar root in v0.1. Future spec versions may add entries; readers MUST skip unknown entries and MUST NOT error on them.
+**Extra entries:** readers MUST skip entries they do not recognize and MUST NOT error on them. A `0.1` reader encountering `artifacts.json` / `artifacts/<sha256>` simply ignores them.
 
 **Directory permissions:** `artifacts/` is `0755`. Files are `0644`. Owner/group are irrelevant (readers MUST NOT check).
 
@@ -49,10 +53,10 @@ Single top-level JSON object. UTF-8 encoded, no BOM. Pretty-printed (2-space ind
 
 ```json
 {
-  "schema_version": "0.1.0",
+  "schema_version": "0.2.0",
   "tool": {
     "name":    "vishaya",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "capture": {
     "started_at":         "2026-07-19T12:34:56.789Z",
@@ -80,9 +84,10 @@ Single top-level JSON object. UTF-8 encoded, no BOM. Pretty-printed (2-space ind
     "cgroup_id":   1234567
   },
   "coverage": {
-    "families":         ["process", "file", "network"],
-    "syscalls_captured": false,
-    "network_layers":    ["socket", "dns", "http"]
+    "families":           ["process", "file", "network"],
+    "syscalls_captured":   false,
+    "network_layers":      ["socket", "dns", "http"],
+    "artifacts_captured":  false
   },
   "counts": {
     "events_total":    12456,
@@ -91,11 +96,13 @@ Single top-level JSON object. UTF-8 encoded, no BOM. Pretty-printed (2-space ind
     "artifacts_count": 0
   },
   "integrity": {
-    "events_sha256":       "a1b2c3d4...",
-    "process_tree_sha256": "e5f6a7b8..."
+    "events_sha256":          "a1b2c3d4...",
+    "process_tree_sha256":    "e5f6a7b8...",
+    "artifacts_index_sha256": ""
   },
   "sig": {
     "algorithm":  "Ed25519",
+    "scope":      "manifest-v1",
     "pubkey_b64": "MCowBQYDK2VdAyEA...",
     "sig_b64":    "abc123..."
   }
@@ -106,7 +113,7 @@ Single top-level JSON object. UTF-8 encoded, no BOM. Pretty-printed (2-space ind
 
 | Field | Type | Required | Meaning |
 |---|---|---|---|
-| `schema_version` | string (semver) | yes | Bundle format version. `0.1.0` for this spec. |
+| `schema_version` | string (semver) | yes | Bundle format version. `0.2.0` for this spec. |
 | `tool.name` | string | yes | Producer identity. `vishaya` for the reference implementation; MAY be another value for third-party producers. |
 | `tool.version` | string (semver) | yes | Producer version. |
 | `capture.started_at` | string (RFC 3339, UTC) | yes | Capture start timestamp. |
@@ -129,16 +136,19 @@ Single top-level JSON object. UTF-8 encoded, no BOM. Pretty-printed (2-space ind
 | `coverage.families` | array of strings | yes | Subset of `["process", "file", "network", "syscall"]`. |
 | `coverage.syscalls_captured` | boolean | yes | Redundant with `families` for readability. |
 | `coverage.network_layers` | array of strings | yes if `network` in families | Subset of `["socket", "dns", "http", "https"]`. |
+| `coverage.artifacts_captured` | boolean | recommended (0.2.0+) | `true` if capture ran with `--capture-artifacts`. Distinguishes "feature off" from "on, found nothing". Defaults `false`/absent on 0.1 bundles. |
 | `counts.events_total` | integer | yes | Total events in `events.ndjson`. |
 | `counts.events_dropped` | integer | yes | Events dropped due to ring buffer overflow. `0` for clean captures. |
 | `counts.processes_seen` | integer | yes | Number of distinct processes in `process_tree.json`. |
-| `counts.artifacts_count` | integer | yes | Number of files in `artifacts/`. `0` in v0.1. |
+| `counts.artifacts_count` | integer | yes | Number of files captured into `artifacts/` (i.e. `artifacts.json` records with `status == "ok"`). `0` when artifact capture is off or found nothing. |
 | `integrity.events_sha256` | string (hex, 64) | yes | SHA-256 of `events.ndjson` as stored in the tar. |
 | `integrity.process_tree_sha256` | string (hex, 64) | yes | SHA-256 of `process_tree.json` as stored in the tar. |
+| `integrity.artifacts_index_sha256` | string (hex, 64) | 0.2.0+ | SHA-256 of `artifacts.json` as stored in the tar. `""`/absent when artifact capture was not enabled. Being inside the signed manifest, this transitively covers every captured artifact (see §5A, §6). |
 | `sig` | object | no | Ed25519 signature block. Absent when signing is unavailable. Readers MUST NOT require this field and MUST verify it when present. |
 | `sig.algorithm` | string | yes (if `sig` present) | Signature algorithm. `Ed25519` in v0.1. |
+| `sig.scope` | string | recommended | What the signature covers (see §6): `manifest-v1` = canonical manifest; `""`/absent = legacy two-hash payload. |
 | `sig.pubkey_b64` | string (base64) | yes (if `sig` present) | Ed25519 raw public key, base64-encoded (44 chars, 32 bytes decoded). |
-| `sig.sig_b64` | string (base64) | yes (if `sig` present) | Ed25519 signature over `<events_sha256>\n<process_tree_sha256>\n`, base64-encoded (88 chars, 64 bytes decoded). |
+| `sig.sig_b64` | string (base64) | yes (if `sig` present) | Ed25519 signature over the payload defined by `sig.scope` (see §6), base64-encoded (88 chars, 64 bytes decoded). |
 
 Unknown top-level or nested fields MUST be ignored by readers.
 
@@ -370,12 +380,61 @@ Reconstruction is deterministic from `events.ndjson`; the tree is materialized f
 
 ---
 
+## 5A. `artifacts.json` and `artifacts/` (schema 0.2.0)
+
+Present only when capture ran with `--capture-artifacts`. When artifact capture is off, `artifacts.json` is absent, `artifacts/` is an empty directory, and `integrity.artifacts_index_sha256` is `""` — identical to a `0.1.0` bundle.
+
+**Files** are stored **content-addressed**: each captured file is a tar entry named `artifacts/<sha256>`, where `<sha256>` is the lowercase-hex SHA-256 of the file's bytes. Identical content from multiple source paths is stored once. Content-addressing makes names collision-free and path-traversal-proof (names are 64 hex chars).
+
+**`artifacts.json`** is a single top-level JSON **array**. Each element describes one captured (or attempted) file:
+
+```json
+[
+  {
+    "sha256":       "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    "size":         2048,
+    "mode":         420,
+    "source_paths": ["/tmp/dropper.sh", "/tmp/copy.sh"],
+    "status":       "ok"
+  }
+]
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `sha256` | string (hex, 64) | Content hash; also the `artifacts/<sha256>` entry name. `""` for non-`ok` records. |
+| `size` | integer | Bytes captured. `0` for zero-byte files and non-`ok` records where unknown. |
+| `mode` | integer | `st_mode & 07777` (permission bits) of the source file; `0` if unknown. |
+| `source_paths` | array of strings | Absolute path(s) whose write/rename produced this content (raw kernel bytes; may not be valid UTF-8 — serialized with the U+FFFD replacement handler). |
+| `status` | string | Outcome — see vocabulary below. |
+
+**`status` vocabulary** (stable, additive — readers MUST tolerate unknown values):
+
+| Status | Meaning |
+|---|---|
+| `ok` | File captured; bytes present at `artifacts/<sha256>`. |
+| `skipped_too_large` | Exceeded the per-file size cap (`--artifact-max-size`). |
+| `skipped_bound_exceeded` | Total-size or count cap reached (`--artifact-max-total` / `--artifact-max-count`). |
+| `skipped_symlink` | The path was a symlink; never followed (evidence-integrity + safety). |
+| `skipped_special` | Not a regular file (directory, socket, fifo, device). |
+| `missing_at_finalize` | The file was gone at end-of-capture (created-then-deleted during the run). |
+| `error_unreadable` | Could not be read/copied. |
+
+**Capture semantics (v0.2, reference writer).** Candidates are files the target created or modified, inferred from successful `openat` with write intent (`O_CREAT`/`O_WRONLY`/`O_RDWR`) and `renameat2` destinations, restricted to **absolute** paths. Files are copied **after the target exits** (an end-of-capture snapshot), so a file the target created and then deleted during the run is recorded as `missing_at_finalize` but its bytes are not present. Relative / fd-relative paths are recorded in events but not extracted. These are producer behaviors, not format requirements; a future version may capture more (e.g. copy-on-close).
+
+---
+
 ## 6. Integrity
 
 - `integrity.events_sha256` is the SHA-256 of the raw bytes of `events.ndjson` as stored in the tar (uncompressed, exactly as unpacked).
 - `integrity.process_tree_sha256` is the SHA-256 of the raw bytes of `process_tree.json` as stored in the tar.
-- Compliant readers SHOULD verify both hashes at load time. Failure MUST produce a clear warning and MAY be treated as fatal depending on tool configuration.
-- When `sig` is present, the signed payload is the ASCII string `<events_sha256>\n<process_tree_sha256>\n` (two hex digests, each followed by a newline). The signing key is auto-generated on first run at `~/.config/vishaya/keys/signing.key` (Ed25519, PEM format, `0600` permissions). A bundle without `sig` is unsigned but otherwise valid; readers SHOULD warn the user.
+- `integrity.artifacts_index_sha256` (0.2.0+, when non-empty) is the SHA-256 of the raw bytes of `artifacts.json` as stored in the tar. Since `artifacts.json` records each artifact's own `sha256`, and each `artifacts/<sha256>` entry is content-addressed to that hash, the chain **signature → manifest → `artifacts_index_sha256` → `artifacts.json` → per-file `sha256` → `artifacts/<sha256>` bytes** binds every captured artifact to the signature with no separate signing scope. A `0.2` reader SHOULD recompute the index hash and each artifact's hash and warn on mismatch, missing-expected, or unexpected `artifacts/<...>` entries.
+- Compliant readers SHOULD verify the content hashes at load time. Failure MUST produce a clear warning and MAY be treated as fatal depending on tool configuration.
+- **Signature scope.** The `sig.scope` field says what the signature covers, so readers can reconstruct the exact signed bytes:
+  - `"manifest-v1"` (current writer): the signed payload is the **canonical manifest** — `manifest.json` serialized with the `sig` block removed, compact, with object keys in deterministic (lexicographic) order. Because the manifest contains `integrity.events_sha256` and `integrity.process_tree_sha256`, this transitively covers the captured content as well as all metadata (counts, host, target, timestamps).
+  - `""` / absent (legacy): the signed payload is the ASCII string `<events_sha256>\n<process_tree_sha256>\n` (two hex digests, each followed by a newline). Readers MUST still accept these.
+- The signing key is auto-generated on first run at `~/.config/vishaya/keys/signing.key` (Ed25519, PEM, `0600`). `sig.pubkey_b64` is the base64 32-byte raw public key; its fingerprint is the first 16 hex chars of `SHA-256(raw key)`. **Trust model:** the key is self-generated and travels in the bundle, so a valid signature is strong **tamper-evidence**, not third-party attestation — an actor who alters the bundle and re-signs with their own key produces a valid signature under a *different* key. Consumers who need authenticity MUST pin/compare the expected `pubkey_b64` (e.g. `vishaya verify --verify-key`). Keyless attestation (Sigstore/Rekor) is planned for v1.0.
+- A bundle without `sig` is unsigned but otherwise valid; readers SHOULD warn the user.
 
 ---
 
@@ -397,7 +456,7 @@ A compliant writer:
 2. MUST write all four required entries listed in §2.
 3. MUST populate every field marked `required` in §3.2.
 4. SHOULD emit events in ascending `ts_ns` order in `events.ndjson`. The v0.1 reference writer emits in kernel ring-buffer delivery order, which is approximately but not strictly sorted across CPUs; consumers needing strict order MUST sort (see §9.6). A future version may canonicalize the on-disk order.
-5. MUST compute and populate `integrity.events_sha256` and `integrity.process_tree_sha256` correctly.
+5. MUST compute and populate `integrity.events_sha256` and `integrity.process_tree_sha256` correctly. When it emits `artifacts.json`, it MUST populate `integrity.artifacts_index_sha256` (computed before signing) and name each artifact tar entry `artifacts/<sha256>` matching the file's content hash and its `artifacts.json` record.
 6. MUST write to `<path>.tmp`, fsync, and atomically rename to `<path>` on completion.
 7. MUST NOT include personally-identifying data beyond what is explicitly permitted (uid/gid yes; env values no).
 8. MAY populate optional and recommended fields.

@@ -116,8 +116,11 @@ static bool CheckMinKernelVersion(unsigned need_major, unsigned need_minor,
 
 /**
  *  Emit portability note when syscall allowlist is numeric and active.
+ *  Currently unused (Vishaya drives the collector via CLI flags, not the
+ *  inherited allowlist config), but retained as a ready diagnostic; marked
+ *  maybe_unused so it doesn't warn.
  */
-void LogSyscallAllowlistPortability(const RuntimeConfig& cfg) {
+[[maybe_unused]] void LogSyscallAllowlistPortability(const RuntimeConfig& cfg) {
   if (cfg.syscall_allowlist.empty()) {
     return;
   }

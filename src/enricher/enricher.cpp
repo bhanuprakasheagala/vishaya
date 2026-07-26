@@ -142,17 +142,40 @@ void EnrichProcessEvent(process_event* ev) {
 
   const std::string pid_s = std::to_string(pid);
 
-  if (IsEmpty(ev->exec_path)) {
+  // PID-reuse guard. The kernel captured this process's start time at event time
+  // (reserve_process_event). Before trusting any /proc-derived field, confirm the
+  // process currently living at /proc/<pid> is the SAME incarnation — a recycled
+  // PID would otherwise graft a different process's exe/cwd/cmdline onto this
+  // event. When the kernel could not capture a start time (start_time_ticks == 0,
+  // e.g. a kernel without task->start_boottime) we have no reference and fall back
+  // to best-effort /proc reads exactly as before.
+  bool proc_trustworthy = true;
+  if (ev->start_time_ticks != 0) {
+    const uint64_t proc_start =
+        ParseStartTimeTicks(ReadTextFile("/proc/" + pid_s + "/stat"));
+    // proc_start == 0 means the process has exited; the /proc reads below simply
+    // fail and leave the kernel-captured fields in place — no misattribution. A
+    // non-zero value that disagrees means a different process now holds this PID.
+    if (proc_start != 0) {
+      const uint64_t a = ev->start_time_ticks;
+      const uint64_t diff = a > proc_start ? a - proc_start : proc_start - a;
+      proc_trustworthy = (diff <= 1);  // ±1 tick tolerance for rounding
+    }
+  }
+
+  if (proc_trustworthy && IsEmpty(ev->exec_path)) {
     const std::string exe = ReadProcSymlink("/proc/" + pid_s + "/exe");
     if (!exe.empty()) {
       CopyToFixed(ev->exec_path, sizeof(ev->exec_path), exe);
-    } else if (!IsEmpty(ev->filename)) {
-      // Process already exited, so /proc/<pid>/exe is gone. Fall back to the
-      // exec path the kernel captured at exec time (BPF sched_process_exec),
-      // so exec_path is never empty for an exec event whose process was
-      // short-lived — the race this whole path guards against.
-      CopyToFixed(ev->exec_path, sizeof(ev->exec_path), std::string(ev->filename));
     }
+  }
+
+  // Fall back to the exec path the kernel captured at exec time (BPF
+  // sched_process_exec) when /proc gave us nothing — because the process exited,
+  // or because a reused PID made /proc untrustworthy. This keeps exec_path
+  // populated for short-lived processes without ever using another process's data.
+  if (IsEmpty(ev->exec_path) && !IsEmpty(ev->filename)) {
+    CopyToFixed(ev->exec_path, sizeof(ev->exec_path), std::string(ev->filename));
   }
 
   // Keep legacy field populated for downstream consumers that still read `filename`.
@@ -160,14 +183,14 @@ void EnrichProcessEvent(process_event* ev) {
     CopyToFixed(ev->filename, sizeof(ev->filename), std::string(ev->exec_path));
   }
 
-  if (IsEmpty(ev->cwd)) {
+  if (proc_trustworthy && IsEmpty(ev->cwd)) {
     const std::string cwd = ReadProcSymlink("/proc/" + pid_s + "/cwd");
     if (!cwd.empty()) {
       CopyToFixed(ev->cwd, sizeof(ev->cwd), cwd);
     }
   }
 
-  if (IsEmpty(ev->cmdline)) {
+  if (proc_trustworthy && IsEmpty(ev->cmdline)) {
     std::string cmdline = ReadTextFile("/proc/" + pid_s + "/cmdline", true);
     cmdline = NormalizeCmdline(std::move(cmdline));
     if (!cmdline.empty()) {
@@ -175,7 +198,7 @@ void EnrichProcessEvent(process_event* ev) {
     }
   }
 
-  if (IsEmpty(ev->parent_comm) && ev->hdr.ppid != 0) {
+  if (proc_trustworthy && IsEmpty(ev->parent_comm) && ev->hdr.ppid != 0) {
     std::string pcomm = ReadTextFile("/proc/" + std::to_string(ev->hdr.ppid) + "/comm");
     RStrip(&pcomm);
     if (!pcomm.empty()) {
@@ -183,6 +206,10 @@ void EnrichProcessEvent(process_event* ev) {
     }
   }
 
+  // Only reached on kernels that could not capture the start time in-kernel; when
+  // the kernel set it, the value is authoritative and reuse-proof. (When non-zero
+  // above we already read /proc/<pid>/stat once for the reuse check, so this branch
+  // and that check never both fire — at most one stat read per event.)
   if (ev->start_time_ticks == 0) {
     const std::string stat_line = ReadTextFile("/proc/" + pid_s + "/stat");
     ev->start_time_ticks = ParseStartTimeTicks(stat_line);

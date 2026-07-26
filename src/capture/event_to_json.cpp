@@ -144,6 +144,16 @@ uint64_t read_mount_ns_ino(uint32_t pid) {
 // of a process. Caching by tgid eliminates redundant syscalls when the same
 // process emits many events. The map is cleared wholesale at kMaxPids entries
 // to bound memory and handle PID reuse without stale-entry tracking overhead.
+//
+// Known limitation: unlike process-event enrichment, these fields have no
+// per-event kernel start-time to cross-check against (only process_event carries
+// start_time_ticks; file/network headers do not), so a PID recycled within a
+// single capture could receive the prior process's cgroup/mount-ns until the
+// wholesale clear. Target-scoping bounds the blast radius: every captured event
+// already belongs to the target's cgroup subtree, so a reused PID resolves to the
+// same scope (and usually the same mount namespace). A fully race-free fix would
+// require threading a start-time into the shared event header — deferred until a
+// schema-major bump makes that additive change worthwhile.
 
 struct ContainerCtx {
   std::string cgroup_path;
@@ -290,7 +300,12 @@ std::string event_to_json(const vishaya::collector::EventVariant& event) {
         } else {
           return "{}";
         }
-        return j.dump();
+        // Kernel-sourced strings (comm, paths, cmdline, argv) can contain bytes
+        // that are not valid UTF-8. nlohmann's default dump() throws type_error 316
+        // on such bytes, which would silently drop the event upstream. Use the
+        // 'replace' handler so invalid sequences become U+FFFD and the event is
+        // still recorded. (indent=-1, space, ensure_ascii=false → compact output.)
+        return j.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
       },
       event);
 }

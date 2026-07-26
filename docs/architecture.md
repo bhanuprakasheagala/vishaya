@@ -123,7 +123,7 @@ User ─── vishaya tree case.vishaya ──┐
                           └──────┬─────────────┘
                                  ▼
                           ┌───────────────┐
-                          │ inspect/tree  │  (or files, network, timeline)
+                          │ inspect/tree  │  (or summary/files/network/timeline/verify/diff)
                           └───────┬───────┘
                                   ▼
                              stdout view
@@ -155,9 +155,9 @@ src/
   decoder/                      (raw bytes → EventVariant — namespace vishaya::collector)
   enricher/                     (/proc enrichment for process events — namespace vishaya::collector)
   isolation/                    (Cgroup + target_launch)
-  bundle/                       (writer + reader + manifest + process_tree + schema_version)
-  capture/                      (Session + WalWriter + event_to_json + protocol_decoder)
-  inspect/                      (tree/files/network/timeline subcommands)
+  bundle/                       (writer + reader + manifest + artifacts + process_tree + hash + sign + schema_version)
+  capture/                      (Session + WalWriter + event_to_json + protocol_decoder + artifact_collector)
+  inspect/                      (summary/tree/files/network/timeline/verify/diff/artifacts subcommands)
   cli/                          (dispatcher + capture_cmd + main)
 
 scripts/
@@ -245,48 +245,15 @@ case.vishaya  (tar.zst)
 
 ### manifest.json
 
-```json
-{
-  "schema_version": "0.1.0",
-  "tool": {
-    "name": "vishaya",
-    "version": "0.1.0"
-  },
-  "capture": {
-    "started_at": "2026-07-19T12:34:56Z",
-    "ended_at":   "2026-07-19T12:35:41Z",
-    "duration_seconds": 45,
-    "host": {
-      "kernel": "6.8.0-40-generic",
-      "arch": "x86_64",
-      "distro": "Ubuntu 24.04"
-    }
-  },
-  "target": {
-    "path": "/path/to/sample.elf",
-    "sha256": "…",
-    "args": ["arg1", "arg2"],
-    "envp_count": 42
-  },
-  "isolation": {
-    "namespaces": ["mnt"],
-    "cgroup_path": "/sys/fs/cgroup/vishaya-<uuid>"
-  },
-  "coverage": {
-    "domains": ["process", "file", "network"],
-    "syscalls_captured": false
-  },
-  "counts": {
-    "events_total": 12456,
-    "events_dropped": 0,
-    "processes_seen": 7
-  },
-  "integrity": {
-    "events_sha256": "…",
-    "process_tree_sha256": "…"
-  }
-}
-```
+Top-level sections: `schema_version`, `tool`, `capture` (times + duration + a
+CLOCK_MONOTONIC↔CLOCK_REALTIME clock anchor + `host`), `target` (path, sha256, args,
+env_count), `isolation`, `coverage` (families + network_layers + syscalls_captured),
+`counts`, `integrity` (the two content SHA-256s), and `sig` (the Ed25519 signature block:
+`algorithm`, `scope`, `pubkey_b64`, `sig_b64`).
+
+The **authoritative, complete, field-by-field schema lives in
+[bundle-spec-v0.1.md §3](bundle-spec-v0.1.md)** — kept there as the single source of truth so
+it can't drift from a duplicated example here.
 
 ### events.ndjson
 
@@ -294,30 +261,17 @@ One event per line, JSON-serialized from the existing C event schema (`include/e
 
 ### process_tree.json
 
-```json
-{
-  "root_pid": 12345,
-  "processes": [
-    {
-      "pid": 12345,
-      "ppid": 1,
-      "comm": "sample.elf",
-      "exec_path": "/path/to/sample.elf",
-      "start_time_ns": 1234567890,
-      "end_time_ns":   1234612890,
-      "children": [12346, 12347]
-    },
-    …
-  ]
-}
-```
+A `root_pid` plus a `processes[]` array — one record per real process (thread-group leader),
+each with pid/tgid/ppid/comm/exec_path/cmdline/cwd/uid/gid, `start_ts_ns`, nullable
+`end_ts_ns`/`exit_code`, and `children` (child TGIDs). Full field list and semantics:
+[bundle-spec-v0.1.md §5](bundle-spec-v0.1.md) (single source of truth).
 
 ### Schema versioning rules
 
 - `manifest.schema_version` follows semver.
 - Reader rejects **bundle major > reader major** with a clear error.
 - Reader accepts **bundle major ≤ reader major**; ignores fields it doesn't recognize.
-- v0.x is explicitly unstable; v1.0.0 will be the first frozen major.
+- v0.x is **additive-only** (existing fields never removed/renamed/retyped — safe to build a reader against today); v1.0.0 will be the first frozen major. See the spec's stability commitment.
 
 ---
 
@@ -352,7 +306,7 @@ The critical scoping invariant is cgroup-based, not namespace-based. Namespaces 
 ## 7. Design decisions (locked)
 
 ### D1. Single binary with subcommands
-`vishaya capture`, `vishaya tree`, `vishaya files`, `vishaya network`, `vishaya timeline`. Mental model: `git`, `docker`, `kubectl`. One artifact to install, one thing to explain.
+`vishaya capture`, plus offline readers `vishaya summary`, `tree`, `files`, `network`, `timeline`, `verify`, and `diff`. Mental model: `git`, `docker`, `kubectl`. One artifact to install, one thing to explain.
 
 ### D2. Target scoping via cgroups v2 (not PID tracking)
 Target is placed in a fresh cgroup at capture start. All BPF probes filter events by cgroup ID via `bpf_get_current_cgroup_id()`. Children inherit the cgroup automatically → correctness is kernel-managed. Cleaner than maintaining a "watched PID" BPF map.

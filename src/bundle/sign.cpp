@@ -1,5 +1,7 @@
 #include "bundle/sign.h"
 
+#include "bundle/hash.h"
+
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
@@ -39,6 +41,10 @@ std::string base64_decode(const std::string& in) {
   size_t pad = 0;
   if (in[in.size() - 1] == '=') ++pad;
   if (in.size() >= 2 && in[in.size() - 2] == '=') ++pad;
+  // Defensive: on adversarial/truncated input EVP_DecodeBlock may report fewer
+  // bytes than the padding count implies; guard the subtraction so it can't wrap
+  // size_t into a huge resize().
+  if (static_cast<size_t>(len) < pad) return {};
   out.resize(static_cast<size_t>(len) - pad);
   return out;
 }
@@ -224,6 +230,12 @@ bool verify_signature(const BundleSignature& sig, const std::string& data) {
   EVP_MD_CTX_free(mdctx);
   EVP_PKEY_free(pkey);
   return ok;
+}
+
+std::string pubkey_fingerprint(const std::string& pubkey_b64) {
+  const std::string raw = base64_decode(pubkey_b64);
+  if (raw.size() != 32) return "unknown";
+  return sha256_hex_of_bytes(raw).substr(0, 16);
 }
 
 } // namespace vishaya::bundle

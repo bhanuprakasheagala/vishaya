@@ -8,6 +8,7 @@
 
 #include <span>
 #include <string>
+#include <variant>  // std::get_if on the decoded EventVariant
 
 namespace vishaya::capture {
 
@@ -111,6 +112,15 @@ void Session::on_raw_event(const unsigned char* data, size_t size) {
 
   // Enrich process events with /proc data. Enricher is a no-op for other families.
   enricher_.Enrich(*decoded);
+
+  // Feed file events to the artifact collector (if enabled). observe() is cheap
+  // and never throws; kept outside the WAL try-guard so an artifact concern can
+  // never cause an event to be dropped from the WAL.
+  if (artifacts_) {
+    if (const auto* fe = std::get_if<file_event>(&*decoded)) {
+      artifacts_->observe(*fe);
+    }
+  }
 
   try {
     const std::string line = event_to_json(*decoded);

@@ -42,7 +42,7 @@ endif()
 # all introduced in OpenSSL 1.1.1.
 find_package(OpenSSL 1.1.1 REQUIRED COMPONENTS Crypto)
 
-message(STATUS "Vishaya v0.1 build")
+message(STATUS "Vishaya v0.2 build")
 message(STATUS "  libbpf:        ${LIBBPF_VERSION}")
 message(STATUS "  libzstd:       ${LIBZSTD_VERSION}")
 message(STATUS "  libarchive:    ${LIBARCHIVE_VERSION}")
@@ -109,6 +109,7 @@ target_compile_options(vishaya_isolation PRIVATE -Wall -Wextra -Wpedantic)
 add_library(vishaya_bundle STATIC
   src/bundle/hash.cpp
   src/bundle/manifest.cpp
+  src/bundle/artifacts.cpp
   src/bundle/process_tree.cpp
   src/bundle/sign.cpp
   src/bundle/writer.cpp
@@ -134,6 +135,7 @@ add_library(vishaya_capture STATIC
   src/capture/wal_writer.cpp
   src/capture/event_to_json.cpp
   src/capture/protocol_decoder.cpp
+  src/capture/artifact_collector.cpp
   src/capture/session.cpp
 )
 target_include_directories(vishaya_capture PUBLIC src include)
@@ -150,6 +152,10 @@ add_library(vishaya_inspect STATIC
   src/inspect/files.cpp
   src/inspect/network.cpp
   src/inspect/timeline.cpp
+  src/inspect/verify.cpp
+  src/inspect/summary.cpp
+  src/inspect/diff.cpp
+  src/inspect/artifacts.cpp
 )
 target_include_directories(vishaya_inspect PUBLIC src include)
 target_link_libraries(vishaya_inspect PUBLIC

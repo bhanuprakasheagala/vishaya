@@ -61,7 +61,18 @@ int parse_major(const std::string& semver) {
 
 } // namespace
 
-std::string manifest_to_json(const Manifest& m) {
+namespace {
+
+// Build the manifest as a json object. Single source of truth for both the
+// on-disk manifest.json and the canonical signing payload (manifest_signing_payload).
+//
+// INVARIANT: every field emitted here MUST be parsed back by manifest_from_json.
+// The "manifest-v1" signature is computed over this object (minus `sig`), and the
+// reader re-derives it from the *parsed* struct — so a field written here but not
+// parsed there would make the reader's payload differ and silently fail every
+// signature verification. (End-to-end tests E10/E11 in tests/run-tests.sh catch a
+// violation.) Keep to_json and from_json in lockstep.
+json manifest_to_jobject(const Manifest& m) {
   json j;
   j["schema_version"] = m.schema_version;
   j["tool"] = json{
@@ -83,9 +94,10 @@ std::string manifest_to_json(const Manifest& m) {
     {"cgroup_id",   m.isolation.cgroup_id},
   };
   j["coverage"] = json{
-    {"families",          m.coverage.families},
-    {"syscalls_captured", m.coverage.syscalls_captured},
-    {"network_layers",    m.coverage.network_layers},
+    {"families",           m.coverage.families},
+    {"syscalls_captured",  m.coverage.syscalls_captured},
+    {"network_layers",     m.coverage.network_layers},
+    {"artifacts_captured", m.coverage.artifacts_captured},
   };
   j["counts"] = json{
     {"events_total",    m.counts.events_total},
@@ -94,15 +106,29 @@ std::string manifest_to_json(const Manifest& m) {
     {"artifacts_count", m.counts.artifacts_count},
   };
   j["integrity"] = json{
-    {"events_sha256",       m.integrity.events_sha256},
-    {"process_tree_sha256", m.integrity.process_tree_sha256},
+    {"events_sha256",          m.integrity.events_sha256},
+    {"process_tree_sha256",    m.integrity.process_tree_sha256},
+    {"artifacts_index_sha256", m.integrity.artifacts_index_sha256},
   };
   j["sig"] = json{
     {"algorithm",  m.sig.algorithm},
+    {"scope",      m.sig.scope},
     {"pubkey_b64", m.sig.pubkey_b64},
     {"sig_b64",    m.sig.sig_b64},
   };
-  return j.dump(2);
+  return j;
+}
+
+} // namespace
+
+std::string manifest_to_json(const Manifest& m) {
+  return manifest_to_jobject(m).dump(2);
+}
+
+std::string manifest_signing_payload(const Manifest& m) {
+  json j = manifest_to_jobject(m);
+  j.erase("sig");            // the signature cannot cover itself
+  return j.dump();           // compact + nlohmann's deterministic key order
 }
 
 Manifest manifest_from_json(const std::string& jstr) {
@@ -113,6 +139,13 @@ Manifest manifest_from_json(const std::string& jstr) {
     throw BundleError(std::string("manifest JSON parse error: ") + e.what());
   }
 
+  // A hostile or corrupt manifest may carry a field of the wrong JSON type (e.g.
+  // a number where a string is expected), which makes nlohmann's value()/get<>()
+  // throw json::type_error. Wrap the whole extraction so that surfaces as a
+  // BundleError per this function's contract rather than an unexpected exception.
+  // (BundleError thrown by the schema checks below is not a json::exception, so it
+  // propagates unchanged through this catch.)
+  try {
   Manifest m;
   m.schema_version = j.value("schema_version", "");
   if (m.schema_version.empty()) {
@@ -171,6 +204,7 @@ Manifest manifest_from_json(const std::string& jstr) {
       m.coverage.network_layers =
           c["network_layers"].get<std::vector<std::string>>();
     }
+    m.coverage.artifacts_captured = c.value("artifacts_captured", false);
   }
 
   if (j.contains("counts") && j["counts"].is_object()) {
@@ -183,18 +217,24 @@ Manifest manifest_from_json(const std::string& jstr) {
 
   if (j.contains("integrity") && j["integrity"].is_object()) {
     const auto& i = j["integrity"];
-    m.integrity.events_sha256       = i.value("events_sha256",       "");
-    m.integrity.process_tree_sha256 = i.value("process_tree_sha256", "");
+    m.integrity.events_sha256          = i.value("events_sha256",          "");
+    m.integrity.process_tree_sha256    = i.value("process_tree_sha256",    "");
+    m.integrity.artifacts_index_sha256 = i.value("artifacts_index_sha256", "");
   }
 
   if (j.contains("sig") && j["sig"].is_object()) {
     const auto& s = j["sig"];
     m.sig.algorithm  = s.value("algorithm",  "");
+    m.sig.scope      = s.value("scope",      "");  // "" = legacy two-hash signature
     m.sig.pubkey_b64 = s.value("pubkey_b64", "");
     m.sig.sig_b64    = s.value("sig_b64",    "");
   }
 
   return m;
+  } catch (const json::exception& e) {
+    throw BundleError(std::string("manifest has a field of unexpected type: ") +
+                      e.what());
+  }
 }
 
 } // namespace vishaya::bundle

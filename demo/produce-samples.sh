@@ -116,3 +116,7 @@ echo "  ${VISHAYA} tree     ${DEMO_DIR}/02-shell-pipeline.vishaya"
 echo "  ${VISHAYA} files    ${DEMO_DIR}/06-file-lifecycle.vishaya"
 echo "  ${VISHAYA} network  ${DEMO_DIR}/04-http-curl.vishaya"
 echo "  ${VISHAYA} timeline ${DEMO_DIR}/01-ls-etc.vishaya"
+echo "  ${VISHAYA} verify   ${DEMO_DIR}/04-http-curl.vishaya"
+echo
+echo "To refresh the committed try-without-root fixtures:"
+echo "  sudo DEMO_DIR=samples $0   &&   git add samples/*.vishaya"

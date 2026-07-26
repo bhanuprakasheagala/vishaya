@@ -1,17 +1,14 @@
-# Backlog
+# Backlog — detailed reference archive
 
-Working tracker for review findings and follow-up work. Single place to revisit when picking up development after a break. Items are grouped by category; each carries status, priority, effort estimate, and concrete fix approach.
+In-depth per-item analysis (description, notes, fix approach, target files) for every
+review finding and follow-up. **Status and priority are NOT tracked here.** The single
+authoritative tracker is [roadmap-decisions.md](roadmap-decisions.md) — its verdict table
+(DONE / KEEP-v0.5 / KEEP-v1.0 / DEFER / CUT) and its Audit-items section. The
+`STATUS | PRIORITY | EFFORT | source` token under each heading below is the *original
+triage snapshot*, kept for historical context only; consult the decisions doc for the
+current verdict.
 
-Update the `Status` field as items move through the workflow.
-
-## Legend
-
-**Status:**
-- `OPEN` — not yet started
-- `IN-PROGRESS` — actively being worked on
-- `DONE` — shipped
-- `DEFERRED` — decided to postpone, with note on when to revisit
-- `REJECTED` — considered and decided against, with reason
+## Legend (for reading the historical token under each heading)
 
 **Priority:**
 - `HIGH` — do before v0.5 announcement / conference talk
@@ -28,23 +25,21 @@ Update the `Status` field as items move through the workflow.
 - `self` — identified during development or self-review
 - `user` — direct user request
 
-## At-a-glance status
+## Status
 
-| Category | Open | In-progress | Done | Deferred | Rejected |
-|---|---|---|---|---|---|
-| A. Correctness | 5 | 1 | 0 | 0 | 0 |
-| B. Positioning | 4 | 0 | 0 | 0 | 0 |
-| C. Implementation quality | 3 | 0 | 0 | 0 | 1 |
-| D. Force multipliers | 4 | 0 | 0 | 0 | 0 |
-| E. DFIR fit | 4 | 0 | 0 | 0 | 0 |
-| F. Ecosystem plays | 5 | 0 | 0 | 0 | 0 |
-| G. Deep technical bets | 3 | 0 | 0 | 0 | 0 |
-| H. Documentation updates | 4 | 0 | 0 | 0 | 0 |
-| I. Strategic / distribution | 2 | 0 | 0 | 0 | 0 |
-| **Total** | **34** | **1** | **0** | **0** | **1** |
+Tracked authoritatively in [roadmap-decisions.md](roadmap-decisions.md) — its verdict
+table (features A-01…I-02 + roadmap) and its Audit-items section (R2/R3). This document no
+longer keeps a status table (it drifted); it is the detailed per-item reference only.
 
-Review-2 audit items (R2-01…R2-09) are tracked in their own section at the end of this
-document, not in the category counts above.
+---
+
+## Post-research reconciliation → folded into the decisions doc
+
+The 2026-07 positioning research re-judged every feature against **verifiable +
+target-scoped + single-file evidence**. Those keep / cut / defer calls, with reasoning,
+now live in [roadmap-decisions.md](roadmap-decisions.md) (verdict table + "notable calls",
++ [research/2026-07-product-positioning.md](research/2026-07-product-positioning.md)). The
+summary that used to live here was removed so the same reasoning isn't maintained twice.
 
 ---
 
@@ -507,7 +502,11 @@ Recommend Option A now (documentation), Option B in v0.5 (syscall name enrichmen
 
 ### F-05. Interactive TUI reader
 
-`OPEN` | `LOW` | `L` | source: user
+`CUT` (2026-07, see roadmap-decisions.md) | ~~`LOW` | `L`~~ | source: user
+
+**CUT:** Low value for high cost (adds a UI dependency, `L` effort). A one-screen `summary`
+view plus the one-shot `tree`/`files`/`network`/`timeline` commands cover hands-on terminal
+use at far lower cost. Revisit only if there's real demand for interactive drill-down.
 
 **Description:** Add an interactive terminal-UI mode for post-capture investigation. The current `vishaya tree / files / network / timeline` subcommands are one-shot outputs suitable for pipelines and scripts. An interactive TUI lets an analyst scroll, filter by event family or PID, jump to a timestamp, and drill into event detail — without opening a browser or leaving the terminal.
 
@@ -660,9 +659,16 @@ Items in this category come from review-1 §7 ("Bottom line"). They are strategi
 
 ### I-02. Reframe pitch: "PCAP-equivalent for process behavior"
 
-`OPEN` | `HIGH` | `S` | source: review-1 §7
+`REJECTED` (2026-07 research) | ~~`HIGH`~~ | source: review-1 §7
 
-**Description:** Current framing in `README.md` and `vision.md` reads as "another eBPF tool with a nice bundle format" — loses to Tracee + Tetragon on features. Reviewer's sharper reframing: **"the PCAP-equivalent for process behavior — a portable, verifiable, tool-independent evidence format for a single suspect binary."** This points at the actual gap in the ecosystem instead of a crowded feature comparison.
+**REJECTED:** The positioning research found this tagline is the *literal marketing line* of
+`.scap`/Stratoshark (CNCF/Sysdig) — adopting it invites a direct, losing comparison to an
+incumbent. Repositioned instead around **verifiable + target-scoped + single-file evidence**
+(applied to `README.md` and `docs/vision.md`; rationale in
+[research/2026-07-product-positioning.md](research/2026-07-product-positioning.md)). Original
+proposal preserved below for history.
+
+**Description (superseded):** Current framing in `README.md` and `vision.md` reads as "another eBPF tool with a nice bundle format" — loses to Tracee + Tetragon on features. Reviewer's sharper reframing: **"the PCAP-equivalent for process behavior — a portable, verifiable, tool-independent evidence format for a single suspect binary."** This points at the actual gap in the ecosystem instead of a crowded feature comparison.
 
 **Notes:** This is not a rewrite of the docs, just a tightening of the leading sentences and the taglines. The rest of `vision.md` already supports this framing; we just need to lead with it.
 
@@ -739,61 +745,17 @@ All 15 tier items are already tracked. The only additions from this new pass are
 
 ---
 
-## Suggested first-pass sequencing
+## Sequencing & workflow → see the decisions doc
 
-Not everything at once. If picking this up cold, suggested order:
+Build order, priority, and per-item status live in
+[roadmap-decisions.md](roadmap-decisions.md) — the v0.5 "core" set, the KEEP/DEFER/CUT
+verdicts, and the Audit-items status. This backlog is the detailed reference for each
+item's problem and fix approach, not a planner or status tracker. The
+[`docs/roadmap.md`](roadmap.md) version-based roadmap is the external-facing view.
 
-**Batch 1: honesty + docs + positioning (2-3 days)**
-- H-01 (vision security honesty)
-- H-03 (event-reference caveats)
-- H-04 (bundle spec clarifications)
-- H-02 (enterprise-features reorder)
-- I-02 (reframe pitch: PCAP-for-process-behavior)
-- I-01 (publish spec independently — can happen in parallel)
-
-**Batch 2: cheap high-impact features (2-3 weeks)**
-- A-05 done via batch 1
-- A-01 (surface drop counts in manifest)
-- C-03 (syscall arch docs)
-- B-01 (sharpen competitive framing)
-
-**Batch 3: force multipliers (4-6 weeks)**
-- D-01 (Python SDK)
-- A-03 (signing default)
-- B-03 (--normalize)
-- D-02 (semantic diff, benefits from --normalize)
-
-**Batch 4: v0.5 blocker + coverage (6-8 weeks)**
-- A-02 (iovec payload)
-- A-04 (container awareness)
-- C-01 (LSM BPF for file ops)
-- C-02 (path resolution via LSM)
-
-**Batch 5: ecosystem (6-8 weeks)**
-- B-02 / F-01 (OCSF export)
-- E-02 (Plaso export)
-- F-04 (static HTML viewer)
-- B-04 / F-03 (Cuckoo/CAPE adapter)
-
-**Batch 6: intelligence layer (10+ weeks)**
-- D-04 (MITRE ATT&CK)
-- E-01 (YARA)
-- F-02 (MCP server)
-- G-02 (TLS uprobes)
-
-Everything after Batch 6 is v1.0+ material.
-
-## How to use this document
-
-1. Pick a batch or an individual item.
-2. Update its `Status` from `OPEN` to `IN-PROGRESS`.
-3. Do the work. Update the code and docs as noted in the item's `Target files`.
-4. Mark `Status: DONE` with a short note on outcome.
-5. If you decide to defer or reject, mark accordingly with reasoning so future-you knows why.
-
-Update the "At-a-glance status" table at the top as items move states.
-
-The `docs/roadmap.md` version-based roadmap is for external users; this backlog is for the person actually building it.
+To work an item: find its verdict in the decisions doc, read the detailed write-up here for
+the fix approach and target files, do the work, then update the verdict/notes in the
+decisions doc (not here).
 
 ---
 
@@ -1121,6 +1083,37 @@ larger stack locals fine now that C1 moved `state` off-stack.
 
 **Files:** `bpf/vishaya_common.bpf.h`.
 
+### R2-13 (P2). Chain-of-custody hardening — sign the whole manifest + `vishaya verify`
+
+`DONE` (Sigstore attestation still open) | `HIGH` | `M` | source: repositioning (Phase 2)
+
+**Description:** Post-repositioning, verifiability is the product's headline, but signing only
+covered the two content hashes — manifest metadata (counts, host, target, timestamps) was
+unsigned (M1), there was no dedicated verify command, and no way to assert *who* signed.
+
+**Fix:**
+- **Sign the canonical manifest** (`sig.scope="manifest-v1"`): the signature now covers the
+  whole manifest-minus-`sig` (deterministic compact JSON, keys sorted), which transitively
+  covers content via `integrity.*_sha256`. New `manifest_signing_payload()`; writer reordered so
+  schema/tool identity is set before signing. **Legacy two-hash bundles still verify** (reader
+  branches on `sig.scope`).
+- **`vishaya verify <bundle>`** — explicit stdout verdict (integrity + signature + key
+  fingerprint), exit 0 only when verified.
+- **`--verify-key <b64>`** — pin/assert the signing key (mismatch → FAILED).
+- **Key fingerprint** (`pubkey_fingerprint()` = first 16 hex of SHA-256(raw key)) logged at
+  capture and shown by `verify`.
+
+**Verified by tests:** E10 (manifest-metadata tamper → signature INVALID — the new capability
+the old scheme missed), E11/E12 (`verify` verdict + exit codes), E13 (`--verify-key` pin),
+B14b (scope==manifest-v1). Symmetry audited: `manifest_from_json` parses every field
+`manifest_to_json` writes, so writer/reader compute byte-identical signing payloads.
+
+**Not compiled** (Linux-only host) — needs a VM build + `run-tests.sh` to confirm.
+
+**Files:** `src/bundle/manifest.{h,cpp}`, `src/bundle/writer.cpp`, `src/bundle/sign.{h,cpp}`,
+`src/bundle/reader.cpp`, `src/inspect/verify.{h,cpp}`, `src/cli/dispatcher.cpp`, `CMakeLists.txt`,
+`docs/bundle-spec-v0.1.md`, `README.md`, `docs/roadmap.md`, `tests/`.
+
 ### R3-remaining. Confirmed review-3 findings (open)
 
 All verified valid; deferred as follow-ups (not blocking the build):
@@ -1130,10 +1123,11 @@ All verified valid; deferred as follow-ups (not blocking the build):
   optionally seed inherited fds on fork.
 - **H3** `LOW`: `iovec_min`/`msghdr_min` assume 64-bit userspace → 32-bit (compat) targets
   misdecode iovec byte counts/pointers. Document limitation.
-- **M1** `HIGH` (chain-of-custody): signing is tamper-evidence, not tamper-proof — pubkey
-  travels in the bundle (attacker can re-sign), and `manifest.json` metadata (host, target
-  sha256, counts, timestamps) is neither signed nor integrity-hashed. Surface pubkey
-  fingerprint at capture; consider signing the manifest and a pinned-key verify option.
+- **M1** `HIGH` (chain-of-custody): **largely addressed by R2-13** — the whole manifest is now
+  signed (metadata covered), the pubkey fingerprint is surfaced at capture, and `vishaya verify
+  --verify-key` provides pinned-key verification. **Still open:** the key is self-generated and
+  travels in-bundle, so this is tamper-evidence + pin-based authenticity, not third-party
+  attestation. Remaining work = Sigstore/Rekor keyless attestation (v1.0 milestone).
 - **M2** `MEDIUM`: `inspect/tree.cpp` `print_node` has no visited-set/depth cap → a crafted
   cyclic `process_tree.json` stack-overflows the analyzer (bundles are semi-trusted input).
   Add visited-set + depth bound; reconcile ppid-orphan vs children-edge parentage.

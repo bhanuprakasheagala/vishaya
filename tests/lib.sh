@@ -150,7 +150,7 @@ repack_extract() {
 repack_finish() {
   local dir="$1" out="$2"
   local entries=()
-  for e in manifest.json events.ndjson process_tree.json artifacts; do
+  for e in manifest.json events.ndjson process_tree.json artifacts.json artifacts; do
     [ -e "$dir/$e" ] && entries+=("$e")
   done
   ( cd "$dir" && tar -cf - "${entries[@]}" 2>/dev/null ) | zstd -qc > "$out" 2>/dev/null

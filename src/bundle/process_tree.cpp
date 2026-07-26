@@ -168,6 +168,9 @@ ProcessTree tree_from_json(const std::string& jstr) {
     throw BundleError(std::string("process_tree JSON parse error: ") + e.what());
   }
 
+  // Wrap field extraction: a wrong-typed field in a hostile/corrupt tree makes
+  // nlohmann throw json::type_error; surface it as BundleError per contract.
+  try {
   ProcessTree t;
   t.root_pid = j.value("root_pid", int32_t{0});
 
@@ -197,6 +200,10 @@ ProcessTree tree_from_json(const std::string& jstr) {
     }
   }
   return t;
+  } catch (const json::exception& e) {
+    throw BundleError(std::string("process_tree has a field of unexpected type: ") +
+                      e.what());
+  }
 }
 
 } // namespace vishaya::bundle

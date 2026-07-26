@@ -137,6 +137,7 @@ if [ "$CAN_CAPTURE" = 1 ]; then
     # R2-02: signed by default
     assert_eq  "B13 (R2-02) signature algorithm Ed25519" "$(mf "$GOOD_BUNDLE" '.sig.algorithm')" "Ed25519"
     assert_match "B14 (R2-02) pubkey present (base64)"    "$(mf "$GOOD_BUNDLE" '.sig.pubkey_b64')" '^[A-Za-z0-9+/=]{20,}$'
+    assert_eq  "B14b (P2) signature scope is manifest-v1" "$(mf "$GOOD_BUNDLE" '.sig.scope')" "manifest-v1"
 
     # R2-08: clock anchor present and non-zero
     assert_ge  "B15 (R2-08) clock_realtime_ns set"       "$(mf "$GOOD_BUNDLE" '.capture.clock_realtime_ns')" 1
@@ -268,11 +269,16 @@ else
   skip "C* event coverage" "needs root + jq/zstd/tar"
 fi
 
-# If we couldn't capture (no root) but the caller supplied a bundle, use it for
-# the inspect/integrity groups so they can still run without root.
-if [ ! -s "$GOOD_BUNDLE" ] && [ -n "${VISHAYA_TEST_BUNDLE:-}" ] && [ -s "${VISHAYA_TEST_BUNDLE:-}" ]; then
-  GOOD_BUNDLE="$VISHAYA_TEST_BUNDLE"
-  info "using supplied VISHAYA_TEST_BUNDLE for inspect/integrity groups: $GOOD_BUNDLE"
+# If we couldn't capture (no root), fall back to a bundle for the inspect/integrity
+# groups so they still run: an explicitly supplied one, else a committed fixture.
+if [ ! -s "$GOOD_BUNDLE" ]; then
+  if [ -n "${VISHAYA_TEST_BUNDLE:-}" ] && [ -s "${VISHAYA_TEST_BUNDLE:-}" ]; then
+    GOOD_BUNDLE="$VISHAYA_TEST_BUNDLE"
+    info "using supplied VISHAYA_TEST_BUNDLE for inspect/integrity groups: $GOOD_BUNDLE"
+  elif [ -s "$REPO_ROOT/samples/02-shell-pipeline.vishaya" ]; then
+    GOOD_BUNDLE="$REPO_ROOT/samples/02-shell-pipeline.vishaya"
+    info "using committed sample fixture for inspect/integrity groups: $GOOD_BUNDLE"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -295,6 +301,28 @@ if [ -s "$GOOD_BUNDLE" ]; then
   # R2-08: timeline shows a wall-clock UTC column and ISO timestamps
   assert_match    "D6 (R2-08) timeline header shows UTC" "$l_out" 'TIME \(UTC\)'
   assert_match    "D7 (R2-08) timeline rows are ISO-8601 UTC" "$l_out" '[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z'
+
+  # D8-D10: summary view (the one-screen verdict).
+  s_out="$("$VISHAYA" summary "$GOOD_BUNDLE" 2>/dev/null)"
+  assert_ok       "D8 summary runs (no root)"     "$VISHAYA" summary "$GOOD_BUNDLE"
+  assert_contains "D9 summary shows header"        "$s_out" "Vishaya capture"
+  assert_contains "D10 summary shows trust line"   "$s_out" "integrity"
+
+  # D11-D13: semantic diff.
+  d_self="$("$VISHAYA" diff "$GOOD_BUNDLE" "$GOOD_BUNDLE" 2>/dev/null)"
+  assert_ok       "D11 diff of a bundle vs itself exits 0" "$VISHAYA" diff "$GOOD_BUNDLE" "$GOOD_BUNDLE"
+  assert_contains "D12 diff self reports no differences"    "$d_self" "no semantic differences"
+  SECOND=""
+  for cand in "$WORK/file.vishaya" "$WORK/net.vishaya" "$WORK/fork.vishaya" \
+              "$REPO_ROOT/samples/04-http-curl.vishaya" "$REPO_ROOT/samples/06-file-lifecycle.vishaya"; do
+    if [ -s "$cand" ] && [ "$cand" != "$GOOD_BUNDLE" ]; then SECOND="$cand"; break; fi
+  done
+  if [ -n "$SECOND" ]; then
+    assert_fail "D13 diff of two different captures reports differences (exit 1)" \
+      "$VISHAYA" diff "$GOOD_BUNDLE" "$SECOND"
+  else
+    skip "D13 diff of two different captures" "no distinct second bundle available"
+  fi
 else
   skip "D* inspect commands" "no good bundle to inspect (needs a root capture)"
 fi
@@ -352,6 +380,42 @@ if [ -s "$GOOD_BUNDLE" ] && [ "$CAN_BUNDLE" = 1 ]; then
   jq '.schema_version="99.0.0"' "$d/manifest.json" > "$d/manifest.json.tmp" && mv "$d/manifest.json.tmp" "$d/manifest.json"
   repack_finish "$d" "$tb"
   assert_fail "E9 newer schema major is rejected" "$VISHAYA" tree "$tb"
+
+  # E10 (manifest-v1 headline): tampering manifest METADATA — not content — is now
+  # caught by the signature, which covers the whole canonical manifest. The old
+  # two-hash scheme would have missed this entirely.
+  if [ "$SIGNED" = 1 ]; then
+    d="$WORK/metatamper"; tb="$WORK/metatamper.vishaya"
+    repack_extract "$GOOD_BUNDLE" "$d"
+    jq '.counts.events_total = (.counts.events_total + 999)' "$d/manifest.json" > "$d/manifest.json.tmp" \
+      && mv "$d/manifest.json.tmp" "$d/manifest.json"
+    repack_finish "$d" "$tb"
+    verr="$("$VISHAYA" tree "$tb" 2>&1 >/dev/null)"
+    assert_contains "E10 (P2) manifest-metadata tamper -> signature INVALID" "$verr" "signature INVALID"
+  else
+    skip "E10 manifest-metadata tamper" "good bundle unsigned"
+  fi
+
+  # E11: `vishaya verify` on a good bundle -> exit 0, clear verdict.
+  vout="$("$VISHAYA" verify "$GOOD_BUNDLE" 2>/dev/null)"
+  assert_ok "E11 verify good bundle exits 0" "$VISHAYA" verify "$GOOD_BUNDLE"
+  if [ "$SIGNED" = 1 ]; then
+    assert_contains "E11b verify prints VERIFIED" "$vout" "VERIFIED"
+  else
+    assert_contains "E11b verify notes unsigned"  "$vout" "unsigned"
+  fi
+
+  # E12: `vishaya verify` on the tampered bundle from E3 -> non-zero exit.
+  assert_fail "E12 verify tampered bundle exits non-zero" "$VISHAYA" verify "$WORK/tamper1.vishaya"
+
+  # E13: --verify-key pinning (only meaningful when signed).
+  if [ "$SIGNED" = 1 ]; then
+    pk="$(mf "$GOOD_BUNDLE" '.sig.pubkey_b64')"
+    assert_ok   "E13 verify --verify-key (correct) exits 0"       "$VISHAYA" verify "$GOOD_BUNDLE" --verify-key "$pk"
+    assert_fail "E13b verify --verify-key (wrong) exits non-zero" "$VISHAYA" verify "$GOOD_BUNDLE" --verify-key "not-the-key"
+  else
+    skip "E13 --verify-key pinning" "good bundle unsigned"
+  fi
 else
   skip "E* integrity/signature" "needs a root capture + jq/zstd/tar"
 fi
@@ -425,6 +489,116 @@ if [ "$CAN_CAPTURE" = 1 ] && [ "$CAN_BUNDLE" = 1 ]; then
   fi
 else
   skip "G* robustness" "needs root + jq/zstd/tar"
+fi
+
+# ---------------------------------------------------------------------------
+# Group H — Artifact capture (root)  [v0.5]
+# ---------------------------------------------------------------------------
+group "H. Artifact capture (--capture-artifacts)"
+
+if [ "$CAN_CAPTURE" = 1 ] && [ "$CAN_BUNDLE" = 1 ]; then
+  ART="/tmp/vishaya-art-$$-drop.txt"
+  ARTB="$WORK/artifacts.vishaya"
+  rm -f "$ART"
+  # Target creates a file (openat O_CREAT via '>') that survives to end-of-capture.
+  cap "$ARTB" -- --target /bin/sh --capture-artifacts -- \
+      -c "echo dropper-payload-$$ > $ART" >/dev/null 2>&1
+
+  if [ -s "$ARTB" ]; then
+    entries="$(bundle_list "$ARTB")"
+    assert_contains "H1 bundle has artifacts.json"                "$entries" "artifacts.json"
+    assert_ok       "H2 artifacts.json is valid JSON"            json_valid "$ARTB" artifacts.json
+    assert_eq       "H3 coverage.artifacts_captured is true"     "$(mf "$ARTB" '.coverage.artifacts_captured')" "true"
+    assert_ge       "H4 counts.artifacts_count >= 1"             "$(mf "$ARTB" '.counts.artifacts_count')" 1
+    assert_match    "H5 integrity.artifacts_index_sha256 is 64 hex" \
+                    "$(mf "$ARTB" '.integrity.artifacts_index_sha256')" '^[0-9a-f]{64}$'
+
+    # The dropped file's absolute path is recorded as an ok artifact.
+    okpaths="$(bundle_entry "$ARTB" artifacts.json | jq -r '.[] | select(.status=="ok") | .source_paths[]' 2>/dev/null)"
+    assert_contains "H6 dropped file recorded as ok artifact"    "$okpaths" "$ART"
+
+    if [ "$HAVE_SHA" = 1 ]; then
+      # artifacts.json integrity matches the manifest.
+      got_ai="$(bundle_entry "$ARTB" artifacts.json | sha256sum | cut -d' ' -f1)"
+      assert_eq "H7 artifacts.json hash matches manifest" "$got_ai" "$(mf "$ARTB" '.integrity.artifacts_index_sha256')"
+      # Content-addressing: each artifacts/<sha> entry name equals its content hash.
+      aname="$(printf '%s\n' "$entries" | grep -m1 -E '^artifacts/[0-9a-f]{64}$')"
+      if [ -n "$aname" ]; then
+        asha="${aname#artifacts/}"
+        got="$(bundle_entry "$ARTB" "$aname" | sha256sum | cut -d' ' -f1)"
+        assert_eq "H8 artifact entry is content-addressed (name == sha256)" "$got" "$asha"
+      else
+        skip "H8 content-addressed name" "no ok artifact entry found"
+      fi
+    else
+      skip "H7/H8 artifact hash cross-checks" "sha256sum unavailable"
+    fi
+
+    # `vishaya artifacts` lists the captured file.
+    a_out="$("$VISHAYA" artifacts "$ARTB" 2>/dev/null)"
+    assert_ok       "H9 artifacts command runs (no root)" "$VISHAYA" artifacts "$ARTB"
+    assert_contains "H10 artifacts command lists the path" "$a_out" "$ART"
+
+    # Full verify chain passes on a clean artifact bundle.
+    assert_ok "H11 verify passes on artifact bundle" "$VISHAYA" verify "$ARTB"
+
+    # Tamper an artifact's bytes (index unchanged) -> content check must fail.
+    if [ "$HAVE_SHA" = 1 ]; then
+      d="$WORK/arttamper"; tb="$WORK/arttamper.vishaya"
+      repack_extract "$ARTB" "$d"
+      atf="$(ls "$d"/artifacts/ 2>/dev/null | grep -m1 -E '^[0-9a-f]{64}$')"
+      if [ -n "$atf" ]; then
+        printf 'X' >> "$d/artifacts/$atf"
+        repack_finish "$d" "$tb"
+        verr="$("$VISHAYA" verify "$tb" 2>&1 >/dev/null)"
+        assert_contains "H12 artifact content tamper -> content mismatch" "$verr" "artifact content mismatch"
+        assert_fail     "H12b verify tampered artifact exits non-zero"     "$VISHAYA" verify "$tb"
+      else
+        skip "H12 artifact tamper" "no ok artifact file to tamper"
+      fi
+    else
+      skip "H12 artifact tamper" "sha256sum unavailable"
+    fi
+  else
+    skip "H1..H12 artifact capture" "capture produced no bundle"
+  fi
+  rm -f "$ART"
+
+  # H13: a file exceeding --artifact-max-size is recorded but not captured.
+  ART2="/tmp/vishaya-art-$$-big.txt"; B13="$WORK/arttoolarge.vishaya"; rm -f "$ART2"
+  cap "$B13" -- --target /bin/sh --capture-artifacts --artifact-max-size 1 -- \
+      -c "echo this-is-more-than-one-byte > $ART2" >/dev/null 2>&1
+  if [ -s "$B13" ]; then
+    st="$(bundle_entry "$B13" artifacts.json | jq -r --arg p "$ART2" '.[] | select(.source_paths[]?==$p) | .status' 2>/dev/null | head -n1)"
+    assert_eq "H13 oversized file -> skipped_too_large" "$st" "skipped_too_large"
+    assert_eq "H13b oversized file not counted as captured" "$(mf "$B13" '.counts.artifacts_count')" "0"
+  else
+    skip "H13 oversized artifact" "capture produced no bundle"
+  fi
+  rm -f "$ART2"
+
+  # H14: a file created then deleted during the run is recorded as missing.
+  ART3="/tmp/vishaya-art-$$-eph.txt"; B14="$WORK/artmissing.vishaya"; rm -f "$ART3"
+  cap "$B14" -- --target /bin/sh --capture-artifacts -- \
+      -c "echo ephemeral > $ART3; rm -f $ART3" >/dev/null 2>&1
+  if [ -s "$B14" ]; then
+    st="$(bundle_entry "$B14" artifacts.json | jq -r --arg p "$ART3" '.[] | select(.source_paths[]?==$p) | .status' 2>/dev/null | head -n1)"
+    assert_eq "H14 created-then-deleted -> missing_at_finalize" "$st" "missing_at_finalize"
+  else
+    skip "H14 ephemeral artifact" "capture produced no bundle"
+  fi
+  rm -f "$ART3"
+else
+  skip "H* artifact capture" "needs root + jq/zstd/tar"
+fi
+
+# H15: a capture WITHOUT the flag emits no artifacts.json and still verifies.
+if [ -s "$GOOD_BUNDLE" ] && [ "$CAN_BUNDLE" = 1 ]; then
+  assert_not_contains "H15 no-flag capture has no artifacts.json" "$(bundle_list "$GOOD_BUNDLE")" "artifacts.json"
+  assert_eq "H15b no-flag artifacts_captured is false" "$(mf "$GOOD_BUNDLE" '.coverage.artifacts_captured // false')" "false"
+  assert_ok "H15c no-flag bundle still verifies" "$VISHAYA" verify "$GOOD_BUNDLE"
+else
+  skip "H15 no-flag compatibility" "no good bundle"
 fi
 
 # ---------------------------------------------------------------------------

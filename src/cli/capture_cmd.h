@@ -7,6 +7,8 @@
  *   final bundle write.
  */
 
+#include "capture/artifact_collector.h"
+
 #include <string>
 #include <vector>
 
@@ -22,6 +24,10 @@ struct CaptureArgs {
   // scope to the target cgroup (map missing). Off by default — capture refuses
   // rather than silently recording unrelated host processes.
   bool                     allow_host_wide = false;
+  // Opt-in: copy files the target created/modified into the bundle's artifacts/.
+  bool                     capture_artifacts = false;
+  // Bounds for artifact capture (CLI-overridable). Defaults live in ArtifactConfig.
+  capture::ArtifactConfig  artifact_cfg;
 };
 
 // Runs a complete capture from start to bundle-written. Returns process exit

@@ -87,21 +87,31 @@ int run_network(const std::string& bundle_path) {
               << "DETAIL\n";
     std::cout << std::string(96, '-') << "\n";
 
-    size_t count = 0;
+    size_t count = 0, skipped = 0;
     reader.for_each_event([&](const nlohmann::json& e) {
-      if (e.value("family", "") != "network") return;
-      const std::string kind = e.value("kind", "");
-      const auto&       data = e.contains("data") ? e["data"] : nlohmann::json::object();
-      const std::string remote =
-          data.contains("remote") ? format_endpoint(data["remote"]) : "";
+      // Bundles are semi-trusted: skip a malformed event rather than aborting the
+      // whole listing on a type_error. Extract everything before any output so a
+      // throw never leaves a half-printed row.
+      try {
+        if (!e.is_object() || e.value("family", "") != "network") return;
+        const std::string kind  = e.value("kind", "");
+        const auto&       data  = e.contains("data") ? e["data"] : nlohmann::json::object();
+        const std::string remote =
+            data.contains("remote") ? format_endpoint(data["remote"]) : "";
+        const int32_t     tgid  = e.value("tgid", 0);
+        const std::string comm  = e.value("comm", "");
+        const std::string extra = format_extra(kind, data);
 
-      std::cout << std::left
-                << std::setw(8)  << e.value("tgid", 0)
-                << std::setw(18) << e.value("comm", "")
-                << std::setw(16) << kind
-                << std::setw(24) << (remote.empty() ? "-" : remote)
-                << format_extra(kind, data) << "\n";
-      ++count;
+        std::cout << std::left
+                  << std::setw(8)  << tgid
+                  << std::setw(18) << comm
+                  << std::setw(16) << kind
+                  << std::setw(24) << (remote.empty() ? "-" : remote)
+                  << extra << "\n";
+        ++count;
+      } catch (const nlohmann::json::exception&) {
+        ++skipped;
+      }
     });
 
     if (count == 0) {
@@ -109,6 +119,8 @@ int run_network(const std::string& bundle_path) {
     } else {
       std::cout << "\n" << count << " network event(s)\n";
     }
+    if (skipped > 0)
+      std::cout << "(" << skipped << " malformed event(s) skipped)\n";
     return 0;
   } catch (const std::exception& e) {
     vishaya::log::error(std::string("network failed: ") + e.what());

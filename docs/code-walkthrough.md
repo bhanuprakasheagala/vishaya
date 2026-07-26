@@ -123,11 +123,14 @@ Everything to spawn a target inside a cgroup + mount namespace.
 
 Everything to produce and consume `.vishaya` files.
 
-- **`schema_version.h`** — the constants `kSchemaVersion = "0.1.0"`, `kToolName = "vishaya"`, `kToolVersion = "0.1.0"`. Single source of truth for versioning.
-- **`manifest.h / manifest.cpp`** — the `Manifest` struct and its JSON ser/de. Layout mirrors [BUNDLE-SPEC-v0.1 §3](bundle-spec-v0.1.md). `manifest_from_json` enforces the schema-major compat rule: a bundle with major > reader's major is rejected with a clear error. Unknown fields are silently ignored.
-- **`process_tree.h / process_tree.cpp`** — the `ProcessTree` struct and its JSON ser/de, plus `reconstruct_tree(events_path, root_pid)` which walks `events.ndjson` line by line, watches for process family events, and builds the lineage.
-- **`writer.h / writer.cpp`** — `write_bundle(input)`. Reconstructs the process tree, computes SHA-256 hashes with OpenSSL EVP, fills in the manifest, builds the tar+zstd archive with libarchive (manifest.json goes in first per spec), fsyncs, atomic-renames.
-- **`reader.h / reader.cpp`** — the `Reader` class. Opens a `.vishaya` file, parses `manifest.json` immediately (enforcing version compat), lazy-loads `process_tree.json`, streams `events.ndjson` through a callback for `for_each_event()`, and can recompute integrity hashes via `verify_integrity()`. Uses an internal RAII `ArchiveReadHandle` so libarchive handles never leak.
+- **`schema_version.h`** — the constants `kSchemaVersion = "0.2.0"`, `kToolName = "vishaya"`, `kToolVersion = "0.2.0"`. Single source of truth for versioning. (0.2.0 adds artifact capture, additive over 0.1.0.)
+- **`hash.h / hash.cpp`** — SHA-256 helpers over OpenSSL EVP: `sha256_hex_of_file`, `sha256_hex_of_bytes`, and an incremental `Sha256Streamer` (opaque `void*` ctx so the header doesn't leak OpenSSL into capture-layer TUs) used to hash data that arrives in chunks — copying an artifact while hashing it, and hashing tar entries during verify.
+- **`manifest.h / manifest.cpp`** — the `Manifest` struct and its JSON ser/de. Layout mirrors [BUNDLE-SPEC-v0.1 §3](bundle-spec-v0.1.md). `manifest_from_json` enforces the schema-major compat rule: a bundle with major > reader's major is rejected with a clear error. Unknown fields are silently ignored. `manifest_signing_payload()` defines the canonical, sig-excluded byte string the `manifest-v1` signature covers (keep to_json ↔ from_json in lockstep — the signature depends on it; the artifact fields `integrity.artifacts_index_sha256` and `coverage.artifacts_captured` are handled symmetrically on both sides).
+- **`artifacts.h / artifacts.cpp`** — the `ArtifactRecord` struct (sha256, size, mode, source_paths, status) and `artifacts_to_json` / `artifacts_from_json` for the `artifacts.json` index. See [spec §5A](bundle-spec-v0.1.md).
+- **`process_tree.h / process_tree.cpp`** — the `ProcessTree` struct and its JSON ser/de, plus `reconstruct_tree(events_path, root_pid)` which walks `events.ndjson`, keeps one record per real process (thread-group leader), resolves fork/clone child edges after the pass (dropping CLONE_THREAD phantoms and deduping), and sorts deterministically.
+- **`writer.h / writer.cpp`** — `write_bundle(input)`. Reconstructs the process tree, computes SHA-256 hashes with OpenSSL EVP, **serializes `artifacts.json` and hashes it into `integrity.artifacts_index_sha256` before signing** (so the signature covers it), fills in the manifest, **signs the canonical manifest with Ed25519** (`sig.scope=manifest-v1`; covers metadata + the content hashes), builds the tar+zstd archive with libarchive (manifest.json goes in first per spec; then — when artifact capture was enabled — `artifacts.json` and each content-addressed `artifacts/<sha256>` file), fsyncs, atomic-renames.
+- **`sign.h / sign.cpp`** — Ed25519 via OpenSSL EVP (pure scheme, `md=NULL`): `load_or_generate_signing_key` (auto-generates `~/.config/vishaya/keys/signing.key`, mode 0600), `sign_data`, `verify_signature`, and `pubkey_fingerprint` (first 16 hex of SHA-256 of the raw key).
+- **`reader.h / reader.cpp`** — the `Reader` class. Opens a `.vishaya` file, parses `manifest.json` immediately (enforcing version compat), lazy-loads `process_tree.json` and the `artifacts.json` index (`artifacts()`), streams `events.ndjson` through a callback for `for_each_event()`. `verify()` recomputes the content integrity hashes, checks the Ed25519 signature (branching on `sig.scope`), **and — for artifact bundles — verifies the `artifacts.json` hash plus stream-hashes each `artifacts/<sha256>` entry against its name and the index**, returning a `VerifyReport`. Uses an internal RAII `ArchiveReadHandle` so libarchive handles never leak.
 - **`bundle_probe.cpp`** — standalone smoke test that writes a synthetic 3-event bundle from a hand-authored NDJSON string. No eBPF, no isolation.
 
 ## Capture pipeline (`src/capture/`)
@@ -139,25 +142,32 @@ Where BPF meets bundle.
 - **`protocol_decoder.h / protocol_decoder.cpp`** — Step 9. `synthesize_protocol_events(event)` returns extra JSON events derived from the captured payload. Contains:
   - Full DNS wire-format parser with compression pointer support (`dns_parse_name`), question section parsing, answer section parsing with rdata formatting for A/AAAA/CNAME/NS/PTR, and DNS type name resolution.
   - HTTP plaintext detector: `looks_like_http_response` matches `HTTP/1.` prefix, `leading_http_method` matches 9 method names; parses method, path, version, Host header (case-insensitive) for requests; version, status code (validated 100–599), reason phrase for responses.
+- **`artifact_collector.h / artifact_collector.cpp`** — the `ArtifactCollector` (opt-in). `observe(file_event)` runs on the poll thread and cheaply records absolute write-intent/rename-destination paths into a deduped, bounded candidate set. `finalize(dir)` runs once after the target exits: it `lstat`s each candidate (refusing symlinks/special files), enforces per-file/total/count bounds, copies+hashes survivors into `dir/<sha256>` in a single stream, dedups identical content, and returns `ArtifactRecord`s (including `skipped_*` / `missing_at_finalize` for transparency).
 - **`session.h / session.cpp`** — the `Session` class. Ties everything together:
-  1. Constructor: opens `WalWriter`, grabs the collector singleton via `CreateCollector()`, calls `Start(callback)` to load BPF, sets `started_ = true`, then calls `SetTargetCgroup(cgroup_id)` to activate Step-6 filtering.
-  2. Callback (`on_raw_event`): decodes bytes, enriches process events, serializes to JSON, writes to WAL. Then calls `synthesize_protocol_events` and appends any synth events to the WAL.
+  1. Constructor: opens `WalWriter`, grabs the collector singleton via `CreateCollector()`, calls `Start(callback)` to load BPF, sets `started_ = true`, then calls `SetTargetCgroup(cgroup_id)` to activate Step-6 filtering. `set_artifact_collector()` optionally attaches an `ArtifactCollector`.
+  2. Callback (`on_raw_event`): decodes bytes, enriches process events, feeds file events to the artifact collector (if attached), serializes to JSON, writes to WAL. Then calls `synthesize_protocol_events` and appends any synth events to the WAL.
   3. `poll(timeout_ms)` — delegates to `collector_->PollOnce`.
   4. `stop()` — detaches, closes WAL. Idempotent. Destructor calls `stop()`.
 
 ## Inspect subcommands (`src/inspect/`)
 
-Each subcommand is one small file with a `run_X(bundle_path)` free function that opens a `Reader`, calls `for_each_event` (streaming) or reads `process_tree()` (lazy), and prints a tabular or tree view:
+Each subcommand is one small file with a `run_X(...)` free function that opens a `Reader`
+(most call `verify()` at load and print a trust line), then either prints a view or compares
+bundles:
 
+- **`summary.cpp`** — the one-screen verdict: trust line + target + counts + a budget-bounded process tree + notable DNS/HTTP/endpoints + files created/deleted/renamed. Aggregates the event stream once into ordered-unique lists.
 - **`tree.cpp`** — reconstructs the parent-child graph, prints with `├──` / `└──` box drawing, handles orphans reachable-check.
 - **`files.cpp`** — table of file events. Rename events show `oldpath -> newpath`.
 - **`network.cpp`** — table with per-kind formatting: DNS shows `A example.com -> 1.2.3.4`, HTTP shows `GET example.com/path`, socket events show byte counts.
-- **`timeline.cpp`** — chronological one-line-per-event view with `family:kind` and a compact detail summary.
+- **`timeline.cpp`** — chronological one-line-per-event view (wall-clock UTC via the manifest clock anchor), `family:kind` plus a compact detail summary; buffers + stable-sorts by `ts_ns`.
+- **`verify.cpp`** — `run_verify(bundle, pinned_key)`: prints an integrity + signature verdict and key fingerprint; `--verify-key` enforces a pinned public key. Exit 0 = verified.
+- **`diff.cpp`** — `run_diff(a, b)`: semantic set comparison (execs / files-by-op / DNS / HTTP / endpoints) — normalized by construction, so PIDs/timestamps/addresses don't create noise. Exit 0 = identical, 1 = differs, 2 = error.
+- **`artifacts.cpp`** — `run_artifacts(bundle)`: lists the captured files (content hash, size, status, source path[s]) from `artifacts.json`; scrubs control chars from attacker-controlled paths. Prints an extraction hint. Empty when the bundle had no artifact capture.
 
 ## CLI (`src/cli/`)
 
-- **`dispatcher.h / dispatcher.cpp`** — CLI11-based subcommand router. Pre-scans argv for `-v` before parsing (so verbose applies during callbacks). Five subcommands: `capture` (real), `tree`, `files`, `network`, `timeline`. Each subcommand's callback stores its result in a local `result` variable; final `return result` propagates to process exit code.
-- **`capture_cmd.h / capture_cmd.cpp`** — the `vishaya capture` subcommand. Requires root. Sets up signal handlers, creates `TmpDir` + `Cgroup`, constructs `Session` (which loads BPF and sets the cgroup filter atomically), calls `launch_target`, spins the waitpid+poll loop, drains events after target exit, builds the manifest (host info via `uname`, target SHA-256, isolation info, coverage), writes the bundle. All resources are RAII-cleaned on any exit path.
+- **`dispatcher.h / dispatcher.cpp`** — CLI11-based subcommand router. Pre-scans argv for `-v` before parsing (so verbose applies during callbacks). Nine subcommands: `capture` (root), `summary`, `tree`, `files`, `network`, `timeline`, `verify`, `diff`, `artifacts`. Each subcommand's callback stores its result in a local `result` variable; final `return result` propagates to process exit code (so `diff`/`verify` exit codes reach the shell).
+- **`capture_cmd.h / capture_cmd.cpp`** — the `vishaya capture` subcommand. Requires root. Sets up signal handlers, creates `TmpDir` + `Cgroup`, constructs `Session` (which loads BPF and sets the cgroup filter atomically), optionally attaches an `ArtifactCollector` (`--capture-artifacts`), calls `launch_target`, spins the waitpid+poll loop, drains events after target exit, snapshots artifacts via `collector.finalize()`, builds the manifest (host info via `uname`, target SHA-256, isolation info, coverage, artifact count), writes the bundle. All resources are RAII-cleaned on any exit path.
 - **`main.cpp`** — 4 lines: `return vishaya::cli::dispatch(argc, argv);`.
 
 ## The runtime flow, end to end

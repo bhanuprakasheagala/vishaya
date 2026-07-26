@@ -48,10 +48,11 @@ R2-01…R2-10) that can be checked from userspace, is exercised:
 | **A. CLI basics** (no root) | A1–A7 | `--version`, `--help`; error handling for missing subcommand / `--target` / bundle arg / missing file; build artifacts present |
 | **B. Capture & bundle structure** | B1–B21 | Capture succeeds; bundle is `tar.zst` with manifest/events/process_tree; all JSON valid; NDJSON valid; semver, target SHA-256, event count; **signed by default (R2-02)**; **clock anchor present (R2-08)**; **process/file/network on by default (R2-04)**; integrity hashes match content |
 | **C. Event coverage** | C1–C11 | **exec path+cmdline for short-lived procs (R2-03)**; fork/child lineage + tree edges; file events; **`--enable-syscalls` on/off**; **DNS decode (R2-01)** + network events; **threads are not phantom processes (R2-06)** |
-| **D. Inspect commands** (no root) | D1–D7 | `tree`/`files`/`network`/`timeline` run without root; **timeline shows UTC wall-clock, ISO-8601 (R2-08)** |
-| **E. Integrity & signing** (no root) | E1–E9 | **Good bundle verifies clean; naive events tamper → integrity mismatch; re-hashed tamper → signature INVALID; unsigned bundle noted; newer schema major rejected (R2-02, spec §6/§7/§9)** |
+| **D. Inspect commands** (no root) | D1–D13 | `summary`/`tree`/`files`/`network`/`timeline` run without root; **timeline shows UTC wall-clock, ISO-8601 (R2-08)**; **`summary` prints header + trust line**; **`diff` self=0/identical, differing=exit 1** |
+| **E. Integrity & signing** (no root) | E1–E13 | **Good bundle verifies clean; naive events tamper → integrity mismatch; re-hashed tamper → signature INVALID; unsigned bundle noted; newer schema rejected; manifest-**metadata** tamper → signature INVALID (manifest-v1 scope); `vishaya verify` verdict + `--verify-key` pinning (R2-02 + P2, spec §6/§7/§9)** |
 | **F. Flags & signals** | F1–F4 | **`--allow-host-wide` (R2-05)**; non-zero target exit recorded; **SIGINT finalizes a usable partial bundle** |
 | **G. Robustness & open format** | G1–G4 | Heavy load stays valid NDJSON; **drops are self-reported, not silent**; bundle readable with `zstd`+`tar`+`jq` alone |
+| **H. Artifact capture** (root) | H1–H15 | **`--capture-artifacts`** bundles dropped/modified files: `artifacts.json` present + valid; `coverage.artifacts_captured`; `counts.artifacts_count`; index hash 64-hex + matches manifest; **content-addressing (entry name == SHA-256)**; `vishaya artifacts` lists paths; **verify passes clean, fails on artifact-content tamper**; **`skipped_too_large`** (bound) and **`missing_at_finalize`** (created-then-deleted) statuses; **no-flag capture emits no `artifacts.json` and still verifies (0.1↔0.2 compat)** |
 
 The two tamper tests in Group E are the headline security checks and demonstrate
 the layered model: **hashing** catches naive edits, and the **signature** catches
@@ -75,6 +76,10 @@ Some things can't be asserted reliably in a portable script; verify them manuall
 - **Cross-arch bundles** — capture on aarch64, inspect the bundle on x86_64 (and
   vice-versa) to confirm the format is portable; syscall numbers are arch-specific
   (see `manifest.capture.host.arch`).
+- **Artifact symlink refusal** — have a target write through a symlink to a
+  sensitive path and confirm the artifact is recorded `skipped_symlink` and its
+  content is NOT copied (H-group covers ok/too-large/missing, but symlink refusal
+  is awkward to trigger safely in a portable script). Verify by hand or code path.
 - **BPF verifier acceptance** — a green `run-tests.sh` implies the probes loaded
   (capture wouldn't produce events otherwise), but if any capture yields an empty
   bundle, check stderr / `dmesg` for a verifier rejection (the real gate for the
@@ -84,5 +89,5 @@ Some things can't be asserted reliably in a portable script; verify them manuall
 
 ## Files
 
-- `run-tests.sh` — the suite (grouped A–G; gates each group on root/tools/network).
+- `run-tests.sh` — the suite (grouped A–H; gates each group on root/tools/network).
 - `lib.sh` — assertion framework + bundle-inspection helpers (`tar.zst` + `jq`).
