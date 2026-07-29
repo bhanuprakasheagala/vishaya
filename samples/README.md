@@ -39,15 +39,15 @@ Each bundle is ~1–10 KB.
   show a valid signature and a key fingerprint (a nice live demo of the verify path) — but that
   key is not a trust anchor. See the [spec §6 trust model](../docs/bundle-spec-v0.1.md).
 
-## Regenerating / refreshing
+## Provenance
 
-Fixtures are produced by the demo script pointed at this committed directory (Linux + root +
-a built CLI):
+These fixtures were produced by running each benign target through `vishaya capture` on a
+real Linux host, then committed here. They're kept small and benign on purpose — a first
+impression, not a test corpus.
+
+To make your own sample, just capture any program and point `--output` at a file:
 
 ```bash
-sudo DEMO_DIR=samples ./demo/produce-samples.sh
-git add samples/*.vishaya          # commit the refreshed fixtures
+sudo vishaya capture --target /bin/ls --output my-sample.vishaya -- -la /etc
+vishaya summary my-sample.vishaya
 ```
-
-Keep the set small and benign — these are a first impression, not a test corpus. The
-larger/ephemeral working set lives in `demo/samples/` (gitignored).
