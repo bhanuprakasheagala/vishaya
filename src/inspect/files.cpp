@@ -3,6 +3,7 @@
 #include "bundle/reader.h"
 #include "common/errors.h"
 #include "common/log.h"
+#include "inspect/render.h"
 
 #include <iomanip>
 #include <iostream>
@@ -34,11 +35,12 @@ int run_files(const std::string& bundle_path) {
         if (!e.is_object() || e.value("family", "") != "file") return;
         const std::string kind   = e.value("kind", "");
         const auto&       data   = e.contains("data") ? e["data"] : nlohmann::json::object();
-        const std::string path_a = data.value("path_a", "");
-        const std::string path_b = data.value("path_b", "");
+        // Paths/comm are attacker-controlled bytes — scrub before display.
+        const std::string path_a = scrub_for_terminal(data.value("path_a", ""));
+        const std::string path_b = scrub_for_terminal(data.value("path_b", ""));
         const int32_t     ret    = data.value("ret", 0);
         const int32_t     tgid   = e.value("tgid", 0);
-        const std::string comm   = e.value("comm", "");
+        const std::string comm   = scrub_for_terminal(e.value("comm", ""));
 
         std::string path = path_a;
         if (kind == "renameat2" && !path_b.empty()) path = path_a + " -> " + path_b;
@@ -46,7 +48,7 @@ int run_files(const std::string& bundle_path) {
         std::cout << std::left
                   << std::setw(8)  << tgid
                   << std::setw(18) << comm
-                  << std::setw(12) << kind
+                  << std::setw(12) << scrub_for_terminal(kind)
                   << std::setw(8)  << ret
                   << path << "\n";
         ++count;

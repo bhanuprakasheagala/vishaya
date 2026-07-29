@@ -269,6 +269,23 @@ void write_bundle(WriterInput& input) {
                       std::string(std::strerror(saved_errno)));
   }
 
+  // fsync the parent directory so the rename itself survives a crash/power loss
+  // (a file fsync alone doesn't persist the directory entry). Best-effort: the
+  // bundle is already in place, so a dir-fsync failure is a warning, not fatal.
+  {
+    const auto slash = input.bundle_path.find_last_of('/');
+    const std::string dir =
+        slash == std::string::npos ? "." : input.bundle_path.substr(0, slash == 0 ? 1 : slash);
+    const int dfd = ::open(dir.c_str(), O_RDONLY | O_DIRECTORY);
+    if (dfd >= 0) {
+      if (::fsync(dfd) != 0) {
+        log::warn("directory fsync failed (bundle written, durability not guaranteed): " +
+                  std::string(std::strerror(errno)));
+      }
+      ::close(dfd);
+    }
+  }
+
   log::info("bundle written: " + input.bundle_path +
             " (events=" + std::to_string(input.manifest.counts.events_total) +
             ", processes=" + std::to_string(input.manifest.counts.processes_seen) + ")");

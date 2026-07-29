@@ -3,6 +3,8 @@
 #include "bundle/reader.h"
 #include "common/errors.h"
 #include "common/log.h"
+#include "inspect/endpoint.h"
+#include "inspect/render.h"
 
 #include <iomanip>
 #include <iostream>
@@ -15,23 +17,13 @@ namespace {
 
 std::string format_endpoint(const nlohmann::json& ep) {
   if (ep.is_null() || !ep.is_object()) return "";
-  const std::string family = ep.value("family", "");
-  const std::string addr   = ep.value("addr", "");
-  const int         port   = ep.value("port", 0);
-  const std::string path   = ep.value("path", "");
-  if (family == "unix" && !path.empty()) {
-    return "unix:" + path;
-  }
-  if (addr.empty() && port == 0) return "";
-  std::ostringstream oss;
-  if (family == "inet6" && !addr.empty()) {
-    oss << "[" << addr << "]:" << port;
-  } else if (!addr.empty()) {
-    oss << addr << ":" << port;
-  } else {
-    oss << ":" << port;
-  }
-  return oss.str();
+  // Shared rendering (unix:path / [v6]:port / addr:port), then the listing-only
+  // fallback: surface a bare ":port" when only a port is known (no address).
+  std::string s = format_remote_endpoint(ep);
+  if (!s.empty()) return s;
+  const int port = ep.value("port", 0);
+  if (port != 0) return ":" + std::to_string(port);
+  return "";
 }
 
 std::string format_extra(const std::string& kind, const nlohmann::json& data) {
@@ -99,13 +91,14 @@ int run_network(const std::string& bundle_path) {
         const std::string remote =
             data.contains("remote") ? format_endpoint(data["remote"]) : "";
         const int32_t     tgid  = e.value("tgid", 0);
-        const std::string comm  = e.value("comm", "");
-        const std::string extra = format_extra(kind, data);
+        const std::string comm  = scrub_for_terminal(e.value("comm", ""));
+        // remote is already scrubbed inside endpoint.h; scrub kind + assembled extra.
+        const std::string extra = scrub_for_terminal(format_extra(kind, data));
 
         std::cout << std::left
                   << std::setw(8)  << tgid
                   << std::setw(18) << comm
-                  << std::setw(16) << kind
+                  << std::setw(16) << scrub_for_terminal(kind)
                   << std::setw(24) << (remote.empty() ? "-" : remote)
                   << extra << "\n";
         ++count;

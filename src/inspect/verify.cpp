@@ -3,6 +3,7 @@
 #include "bundle/reader.h"
 #include "bundle/sign.h"
 #include "common/log.h"
+#include "inspect/render.h"
 
 #include <iostream>
 #include <string>
@@ -15,9 +16,11 @@ int run_verify(const std::string& bundle_path, const std::string& pinned_key_b64
     const auto& m      = reader.manifest();
     const auto  report = reader.verify();  // logs per-file/signature warnings to stderr
 
+    // schema/tool are manifest strings from an attacker-controlled bundle → scrub.
     std::cout << "bundle:     " << bundle_path << "\n";
-    std::cout << "schema:     " << m.schema_version
-              << "   tool: " << m.tool_name << " " << m.tool_version << "\n";
+    std::cout << "schema:     " << scrub_for_terminal(m.schema_version)
+              << "   tool: " << scrub_for_terminal(m.tool_name)
+              << " " << scrub_for_terminal(m.tool_version) << "\n";
     std::cout << "integrity:  " << (report.integrity_ok ? "OK" : "MISMATCH") << "\n";
 
     // Pinned-key check: satisfied by default; only enforced when a pin was given.
@@ -30,8 +33,10 @@ int run_verify(const std::string& bundle_path, const std::string& pinned_key_b64
         pinned_ok = false;
       }
     } else {
-      std::cout << "signature:  " << m.sig.algorithm
-                << " (scope=" << (m.sig.scope.empty() ? "legacy" : m.sig.scope) << ")  "
+      // sig.algorithm/scope are manifest strings from an attacker-controlled
+      // bundle (printed even when the signature is INVALID) → scrub.
+      std::cout << "signature:  " << scrub_for_terminal(m.sig.algorithm)
+                << " (scope=" << scrub_for_terminal(m.sig.scope.empty() ? "legacy" : m.sig.scope) << ")  "
                 << (report.signature_ok ? "VALID" : "INVALID") << "\n";
       std::cout << "key:        fingerprint "
                 << vishaya::bundle::pubkey_fingerprint(m.sig.pubkey_b64) << "\n";

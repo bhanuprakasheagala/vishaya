@@ -1,5 +1,4 @@
-#ifndef VISHAYA_DECODER_H
-#define VISHAYA_DECODER_H
+#pragma once
 
 /*
  * File Notes:
@@ -36,5 +35,3 @@ class Decoder {
 };
 
 }  // namespace vishaya::collector
-
-#endif

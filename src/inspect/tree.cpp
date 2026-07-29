@@ -3,6 +3,7 @@
 #include "bundle/reader.h"
 #include "common/errors.h"
 #include "common/log.h"
+#include "inspect/render.h"
 
 #include <cstdint>
 #include <iostream>
@@ -38,10 +39,10 @@ void print_node(const std::unordered_map<int32_t, const vishaya::bundle::Process
 
   std::cout << prefix
             << (is_last ? "└── " : "├── ")
-            << (r.comm.empty() ? "<unknown>" : r.comm)
+            << (r.comm.empty() ? "<unknown>" : scrub_for_terminal(r.comm))
             << " (pid=" << r.tgid;
   if (!r.exec_path.empty()) {
-    std::cout << " exec=" << r.exec_path;
+    std::cout << " exec=" << scrub_for_terminal(r.exec_path);
   }
   if (r.exit_code.has_value()) {
     std::cout << " exit=" << *r.exit_code;
@@ -87,8 +88,8 @@ int run_tree(const std::string& bundle_path) {
     std::cout << "target: pid=" << tree.root_pid;
     if (auto it = by_tgid.find(tree.root_pid); it != by_tgid.end()) {
       const auto& r = *it->second;
-      if (!r.exec_path.empty()) std::cout << " exec=" << r.exec_path;
-      if (!r.cmdline.empty())   std::cout << " cmdline=\"" << r.cmdline << "\"";
+      if (!r.exec_path.empty()) std::cout << " exec=" << scrub_for_terminal(r.exec_path);
+      if (!r.cmdline.empty())   std::cout << " cmdline=\"" << scrub_for_terminal(r.cmdline) << "\"";
     }
     std::cout << "\n\n";
 

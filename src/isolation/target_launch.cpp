@@ -121,6 +121,10 @@ LaunchResult launch_target(const LaunchOptions&   opts,
     auto argv = make_c_argv(opts.binary, opts.args, argv_storage);
 
     if (opts.envp.empty()) {
+      // Intentional: with no explicit env the target inherits the tool's environment
+      // so it runs realistically (most binaries need PATH/HOME/etc). This does expose
+      // the tool's env to the target; callers wanting a scrubbed env pass opts.envp
+      // (the hook a future `--clear-env` capture flag would use).
       ::execve(opts.binary.c_str(), argv.data(), environ);
     } else {
       auto envp = make_c_envp(opts.envp, envp_storage);

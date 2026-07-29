@@ -3,6 +3,7 @@
 #include "bundle/reader.h"
 #include "common/errors.h"
 #include "common/log.h"
+#include "inspect/render.h"
 
 #include <algorithm>
 #include <chrono>
@@ -91,7 +92,9 @@ std::string one_line_summary(const nlohmann::json& e) {
   } else if (family == "syscall") {
     oss << data.value("syscall_name", "");
   }
-  return oss.str();
+  // The detail line is assembled from attacker-controlled fields (paths, cmdline,
+  // DNS/HTTP names, addresses) — scrub before it can reach the terminal.
+  return scrub_for_terminal(oss.str());
 }
 
 } // namespace
@@ -109,8 +112,14 @@ int run_timeline(const std::string& bundle_path) {
     // ring-buffer delivery order, which is only approximately chronological
     // across CPUs; a global stable sort gives a true timeline while preserving
     // the order of synthetic events relative to their source (same ts_ns).
+    // `timeline` must buffer every event to sort globally, so a hostile bundle with
+    // an enormous event count could exhaust memory. Cap the buffer and note the
+    // truncation; the streaming views (files/network) remain unbounded-input-safe.
+    constexpr size_t kMaxTimelineEvents = 1'000'000;
     std::vector<nlohmann::json> events;
+    bool truncated = false;
     reader.for_each_event([&](const nlohmann::json& e) {
+      if (events.size() >= kMaxTimelineEvents) { truncated = true; return; }
       if (e.is_object()) events.push_back(e);  // ignore non-object lines
     });
     std::stable_sort(events.begin(), events.end(),
@@ -147,10 +156,10 @@ int run_timeline(const std::string& bundle_path) {
           tcol = format_rel(ts >= base_ts ? ts - base_ts : 0);
         }
         const int32_t     tgid = e.value("tgid", 0);
-        const std::string comm = e.value("comm", "");
-        const std::string family_kind =
-            e.value("family", "") + ":" + e.value("kind", "");
-        const std::string detail = one_line_summary(e);
+        const std::string comm = scrub_for_terminal(e.value("comm", ""));
+        const std::string family_kind = scrub_for_terminal(
+            e.value("family", "") + ":" + e.value("kind", ""));
+        const std::string detail = one_line_summary(e);  // already scrubbed
         std::cout << std::left
                   << std::setw(28) << tcol
                   << std::setw(8)  << tgid
@@ -170,6 +179,9 @@ int run_timeline(const std::string& bundle_path) {
     }
     if (skipped > 0)
       std::cout << "(" << skipped << " malformed event(s) skipped)\n";
+    if (truncated)
+      std::cout << "(timeline truncated to the first " << kMaxTimelineEvents
+                << " events; use `files`/`network` for the full streamed views)\n";
     return 0;
   } catch (const std::exception& e) {
     vishaya::log::error(std::string("timeline failed: ") + e.what());

@@ -1,5 +1,4 @@
-#ifndef VISHAYA_COLLECTOR_H
-#define VISHAYA_COLLECTOR_H
+#pragma once
 
 /*
  * File Notes:
@@ -147,5 +146,3 @@ class Collector {
 Collector* CreateCollector();
 
 }  // namespace vishaya::collector
-
-#endif

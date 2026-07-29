@@ -1,5 +1,4 @@
-#ifndef VISHAYA_ENRICHER_H
-#define VISHAYA_ENRICHER_H
+#pragma once
 
 /*
  * File Notes:
@@ -25,5 +24,3 @@ class Enricher {
 };
 
 }  // namespace vishaya::collector
-
-#endif

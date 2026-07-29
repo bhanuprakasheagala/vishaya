@@ -64,12 +64,24 @@ bool find_entry(archive* a, const std::string& target_name) {
   }
 }
 
-// Reads all remaining bytes from the currently-positioned entry into a string.
+// Upper bound on any single in-memory entry (manifest.json, process_tree.json,
+// artifacts.json). These are metadata, not the event stream, so a few hundred MiB
+// is generous — the cap exists so a hostile ~KB tar.zst that inflates to many GB
+// can't OOM the reader (a decompression bomb). events.ndjson is never slurped whole;
+// it is streamed (for_each_event) and stream-hashed (verify_integrity).
+constexpr size_t kMaxEntryBytes = 256ull * 1024 * 1024;
+
+// Reads all remaining bytes from the currently-positioned entry into a string,
+// bounded by kMaxEntryBytes. Throws BundleError if the entry exceeds the cap.
 std::string read_entry_bytes(archive* a) {
   std::string out;
   char        buf[65536];
   la_ssize_t  n;
   while ((n = archive_read_data(a, buf, sizeof(buf))) > 0) {
+    if (out.size() + static_cast<size_t>(n) > kMaxEntryBytes) {
+      throw BundleError("bundle entry exceeds " + std::to_string(kMaxEntryBytes) +
+                        " bytes (possible decompression bomb); refusing to load");
+    }
     out.append(buf, static_cast<size_t>(n));
   }
   if (n < 0) {
@@ -127,12 +139,18 @@ void Reader::for_each_event(
     throw BundleError("bundle missing events.ndjson: " + bundle_path_);
   }
 
+  // Cap a single line's length: a hostile events.ndjson with no newlines would
+  // otherwise grow `line` without bound. An overlong line is dropped and counted
+  // as malformed, and parsing resumes at the next newline.
+  constexpr size_t kMaxLineBytes = 8ull * 1024 * 1024;
   std::string line;
   char        buf[65536];
   la_ssize_t  n;
-  size_t      malformed = 0;
+  size_t      malformed     = 0;
+  bool        line_overflow = false;
 
   auto flush_line = [&]() {
+    if (line_overflow) { ++malformed; line.clear(); line_overflow = false; return; }
     if (line.empty()) return;
     try {
       const nlohmann::json j = nlohmann::json::parse(line);
@@ -147,8 +165,9 @@ void Reader::for_each_event(
     for (la_ssize_t i = 0; i < n; ++i) {
       if (buf[i] == '\n') {
         flush_line();
-      } else {
+      } else if (!line_overflow) {
         line.push_back(buf[i]);
+        if (line.size() > kMaxLineBytes) line_overflow = true;  // drop until newline
       }
     }
   }
@@ -168,14 +187,25 @@ void Reader::for_each_event(
 bool Reader::verify_integrity() {
   bool ok = true;
 
-  // events.ndjson
+  // events.ndjson — stream-hashed (never slurped whole) so a multi-GB event log,
+  // legitimate or a decompression bomb, verifies in constant memory.
   {
     ArchiveReadHandle h(bundle_path_);
     if (!find_entry(h.get(), "events.ndjson")) {
       throw BundleError("bundle missing events.ndjson: " + bundle_path_);
     }
-    const std::string bytes = read_entry_bytes(h.get());
-    const std::string got   = sha256_hex_of_bytes(bytes);
+    Sha256Streamer hasher;
+    char           buf[65536];
+    la_ssize_t     n;
+    while ((n = archive_read_data(h.get(), buf, sizeof(buf))) > 0) {
+      hasher.update(buf, static_cast<size_t>(n));
+    }
+    if (n < 0) {
+      const std::string err = archive_error_string(h.get())
+                                ? archive_error_string(h.get()) : "unknown";
+      throw BundleError("archive_read_data on events.ndjson failed: " + err);
+    }
+    const std::string got = hasher.finalize_hex();
     if (got != manifest_.integrity.events_sha256) {
       log::warn("integrity mismatch: events.ndjson expected=" +
                 manifest_.integrity.events_sha256 + " got=" + got);

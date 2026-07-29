@@ -94,11 +94,18 @@ Cgroup::Cgroup() {
 
 Cgroup::~Cgroup() {
   if (!owned_) return;
-  if (::rmdir(path_.c_str()) != 0) {
-    log::warn("cgroup cleanup failed: rmdir(" + path_ + "): " + std::strerror(errno));
-  } else {
-    log::debug("cgroup removed: " + path_);
+  // rmdir can transiently fail with EBUSY while the kernel finishes tearing down
+  // an exited target's cgroup; retry briefly before giving up. Persistent EBUSY
+  // means a process escaped the cgroup — surfaced as a warning, not silently.
+  for (int attempt = 0; attempt < 10; ++attempt) {
+    if (::rmdir(path_.c_str()) == 0) {
+      log::debug("cgroup removed: " + path_);
+      return;
+    }
+    if (errno != EBUSY) break;
+    ::usleep(10000);  // 10 ms
   }
+  log::warn("cgroup cleanup failed: rmdir(" + path_ + "): " + std::strerror(errno));
 }
 
 Cgroup::Cgroup(Cgroup&& other) noexcept

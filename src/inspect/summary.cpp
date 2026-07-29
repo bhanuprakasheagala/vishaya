@@ -4,6 +4,8 @@
 #include "bundle/sign.h"
 #include "common/errors.h"
 #include "common/log.h"
+#include "inspect/endpoint.h"
+#include "inspect/render.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -24,7 +26,10 @@ namespace {
 struct UniqueList {
   std::vector<std::string> items;
   std::set<std::string>    seen;
-  void add(const std::string& v) {
+  void add(const std::string& raw) {
+    // Everything collected here (paths, DNS names, HTTP lines, endpoints) is
+    // attacker-controlled; scrub terminal-control bytes at the single choke point.
+    const std::string v = scrub_for_terminal(raw);
     if (v.empty()) return;
     if (seen.insert(v).second) items.push_back(v);
   }
@@ -52,18 +57,6 @@ void print_lines(const char* label, const UniqueList& u, size_t cap = 6) {
     std::cout << "    " << label << "  (+" << (u.items.size() - cap) << " more)\n";
 }
 
-std::string endpoint_str(const json& remote) {
-  if (!remote.is_object()) return {};
-  const std::string addr = remote.value("addr", "");
-  const int         port = remote.value("port", 0);
-  const std::string path = remote.value("path", "");
-  if (!path.empty()) return "unix:" + path;
-  if (addr.empty()) return {};
-  const std::string fam = remote.value("family", "");
-  if (fam == "inet6") return "[" + addr + "]:" + std::to_string(port);
-  return addr + ":" + std::to_string(port);
-}
-
 // A short bounded process-tree print (root + descendants) under a line budget.
 void print_tree(const std::unordered_map<int32_t, const vishaya::bundle::ProcessRecord*>& by_tgid,
                 int32_t tgid, const std::string& prefix, bool is_last, int& budget) {
@@ -73,8 +66,8 @@ void print_tree(const std::unordered_map<int32_t, const vishaya::bundle::Process
   const auto& r = *it->second;
   --budget;
   std::cout << "    " << prefix << (prefix.empty() ? "" : (is_last ? "└─ " : "├─ "))
-            << (r.comm.empty() ? "<unknown>" : r.comm) << " (pid=" << r.tgid;
-  if (!r.exec_path.empty()) std::cout << " " << r.exec_path;
+            << (r.comm.empty() ? "<unknown>" : scrub_for_terminal(r.comm)) << " (pid=" << r.tgid;
+  if (!r.exec_path.empty()) std::cout << " " << scrub_for_terminal(r.exec_path);
   if (r.exit_code.has_value()) std::cout << " exit=" << *r.exit_code;
   std::cout << ")\n";
   const std::string next = prefix + (prefix.empty() ? "" : (is_last ? "   " : "│  "));
@@ -99,6 +92,9 @@ int run_summary(const std::string& bundle_path) {
     std::unordered_map<std::string, std::string> dns_answer;  // qname -> first ip
 
     reader.for_each_event([&](const json& e) {
+      // Skip a malformed event (wrong-typed field → json::type_error) rather than
+      // aborting the whole summary — same resilience as the files/network views.
+      try {
       const std::string fam  = e.value("family", "");
       const std::string kind = e.value("kind", "");
       const json&       d    = e.contains("data") ? e["data"] : json::object();
@@ -119,7 +115,7 @@ int run_summary(const std::string& bundle_path) {
       if (fam == "network") {
         ++n_network;
         const json& r = d.contains("remote") ? d["remote"] : json::object();
-        if (kind == "connect") { const auto ep = endpoint_str(r); endpoints.add(ep); }
+        if (kind == "connect") { const auto ep = format_remote_endpoint(r); endpoints.add(ep); }
         else if (kind == "dns-answer" || kind == "dns-query") {
           const json& dj = d.contains("dns") ? d["dns"] : json::object();
           const std::string q = dj.value("qname", "");
@@ -134,12 +130,13 @@ int run_summary(const std::string& bundle_path) {
         else if (kind == "http-request") {
           const json& h = d.contains("http") ? d["http"] : json::object();
           std::string line = h.value("method", "") + " " + h.value("host", "") + h.value("path", "");
-          const auto ep = endpoint_str(r);
+          const auto ep = format_remote_endpoint(r);
           if (!ep.empty()) line += "  (→ " + ep + ")";
           http.add(line);
         }
         return;
       }
+      } catch (const nlohmann::json::exception&) { /* skip malformed event */ }
     });
 
     // Resolve DNS display: "qname → ip" where an answer exists.
@@ -172,14 +169,17 @@ int run_summary(const std::string& bundle_path) {
     std::cout << trust << "\n\n";
 
     // ---- identity + counts ----------------------------------------------
-    std::cout << "  target    " << m.target.path;
+    // target.path, timestamps, and host.* are manifest strings from an
+    // attacker-controlled bundle → scrub before display (sha256 is hex).
+    std::cout << "  target    " << scrub_for_terminal(m.target.path);
     if (m.target.sha256.size() >= 12)
       std::cout << "  sha256 " << m.target.sha256.substr(0, 12) << "…";
     std::cout << "\n";
-    std::cout << "  captured  " << m.capture.started_at
+    std::cout << "  captured  " << scrub_for_terminal(m.capture.started_at)
               << "  · " << m.capture.duration_seconds << "s"
-              << "  · " << m.capture.host.distro
-              << " (" << m.capture.host.kernel << "/" << m.capture.host.arch << ")\n";
+              << "  · " << scrub_for_terminal(m.capture.host.distro)
+              << " (" << scrub_for_terminal(m.capture.host.kernel)
+              << "/" << scrub_for_terminal(m.capture.host.arch) << ")\n";
     std::cout << "  events    " << m.counts.events_total
               << "   process " << n_process << "  file " << n_file
               << "  network " << n_network;
@@ -227,7 +227,8 @@ int run_summary(const std::string& bundle_path) {
         if (shown >= 6) { std::cout << "    (+" << (ok - shown) << " more)\n"; break; }
         ++shown;
         const std::string sha  = a.sha256.substr(0, 12);
-        const std::string path = a.source_paths.empty() ? "" : a.source_paths.front();
+        const std::string path =
+            a.source_paths.empty() ? "" : scrub_for_terminal(a.source_paths.front());
         std::cout << "    " << sha << "  " << a.size << "  " << path << "\n";
       }
     }

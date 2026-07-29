@@ -2,6 +2,8 @@
 
 #include "bundle/reader.h"
 #include "common/log.h"
+#include "inspect/endpoint.h"
+#include "inspect/render.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -34,25 +36,18 @@ struct Facts {
   std::set<std::string> endpoints;  // "ip:port" connected to
 };
 
-std::string endpoint_str(const json& r) {
-  if (!r.is_object()) return {};
-  const std::string addr = r.value("addr", "");
-  const int         port = r.value("port", 0);
-  const std::string path = r.value("path", "");
-  if (!path.empty()) return "unix:" + path;
-  if (addr.empty()) return {};
-  if (r.value("family", "") == "inet6") return "[" + addr + "]:" + std::to_string(port);
-  return addr + ":" + std::to_string(port);
-}
-
 Facts collect(vishaya::bundle::Reader& reader) {
   Facts f;
   const auto& m = reader.manifest();
-  f.target_path = m.target.path;
-  f.target_sha  = m.target.sha256;
+  f.target_path = scrub_for_terminal(m.target.path);
+  f.target_sha  = m.target.sha256;  // hex; printed via substr
   f.events      = m.counts.events_total;
 
   reader.for_each_event([&](const json& e) {
+    // Skip a malformed event rather than aborting the whole diff. All strings that
+    // enter the fact sets are attacker-controlled → scrub before insert (also keeps
+    // the A/B set comparison consistent and terminal-safe when printed).
+    try {
     const std::string fam  = e.value("family", "");
     const std::string kind = e.value("kind", "");
     const json&       d    = e.contains("data") ? e["data"] : json::object();
@@ -61,28 +56,29 @@ Facts collect(vishaya::bundle::Reader& reader) {
       if (kind == "exec") {
         std::string p = d.value("exec_path", "");
         if (p.empty()) p = d.value("filename", "");
-        if (!p.empty()) f.execs.insert(p);
+        if (!p.empty()) f.execs.insert(scrub_for_terminal(p));
       }
     } else if (fam == "file") {
       const std::string a = d.value("path_a", "");
-      if (kind == "unlinkat")       { if (!a.empty()) f.deleted.insert(a); }
-      else if (kind == "renameat2") { f.renamed.insert(a + " → " + d.value("path_b", "")); }
+      if (kind == "unlinkat")       { if (!a.empty()) f.deleted.insert(scrub_for_terminal(a)); }
+      else if (kind == "renameat2") { f.renamed.insert(scrub_for_terminal(a + " → " + d.value("path_b", ""))); }
       else if (kind == "openat") {
         // int64 default: read any JSON-integer flags value without a type_error.
-        if ((d.value("flags", int64_t{0}) & 0100 /*O_CREAT*/) && !a.empty()) f.created.insert(a);
+        if ((d.value("flags", int64_t{0}) & 0100 /*O_CREAT*/) && !a.empty()) f.created.insert(scrub_for_terminal(a));
       }
     } else if (fam == "network") {
       const json& r = d.contains("remote") ? d["remote"] : json::object();
-      if (kind == "connect") { const auto ep = endpoint_str(r); if (!ep.empty()) f.endpoints.insert(ep); }
+      if (kind == "connect") { const auto ep = format_remote_endpoint(r); if (!ep.empty()) f.endpoints.insert(ep); }
       else if (kind == "dns-query" || kind == "dns-answer") {
         const json& dj = d.contains("dns") ? d["dns"] : json::object();
         const std::string q = dj.value("qname", "");
-        if (!q.empty()) f.dns.insert(q);
+        if (!q.empty()) f.dns.insert(scrub_for_terminal(q));
       } else if (kind == "http-request") {
         const json& h = d.contains("http") ? d["http"] : json::object();
-        f.http.insert(h.value("method", "") + " " + h.value("host", "") + h.value("path", ""));
+        f.http.insert(scrub_for_terminal(h.value("method", "") + " " + h.value("host", "") + h.value("path", "")));
       }
     }
+    } catch (const nlohmann::json::exception&) { /* skip malformed event */ }
   });
   return f;
 }

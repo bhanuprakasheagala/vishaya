@@ -109,6 +109,23 @@ int run_capture(const CaptureArgs& args) {
     log::error("--target is required");
     return 1;
   }
+  // Validate the target up front so a bad path fails clearly here, rather than as
+  // an opaque "target exited 127" after all the capture machinery is set up.
+  {
+    struct stat st{};
+    if (::stat(args.target.c_str(), &st) != 0) {
+      log::error("--target not found: " + args.target + " (" + std::strerror(errno) + ")");
+      return 1;
+    }
+    if (!S_ISREG(st.st_mode)) {
+      log::error("--target is not a regular file: " + args.target);
+      return 1;
+    }
+    if (::access(args.target.c_str(), X_OK) != 0) {
+      log::error("--target is not executable: " + args.target);
+      return 1;
+    }
+  }
 
   std::signal(SIGINT,  on_signal);
   std::signal(SIGTERM, on_signal);

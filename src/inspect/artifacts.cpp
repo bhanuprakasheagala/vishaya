@@ -2,6 +2,7 @@
 
 #include "bundle/reader.h"
 #include "common/log.h"
+#include "inspect/render.h"
 
 #include <cstdint>
 #include <iomanip>
@@ -9,20 +10,6 @@
 #include <string>
 
 namespace vishaya::inspect {
-
-namespace {
-// source_paths are raw kernel bytes (attacker-controlled). Scrub ASCII control
-// characters so a crafted path can't inject terminal escape sequences or break
-// the table when listed. High bytes are left as-is (may render as UTF-8 or mojibake).
-std::string scrub(const std::string& s) {
-  std::string out;
-  out.reserve(s.size());
-  for (unsigned char c : s) {
-    out.push_back((c < 0x20 || c == 0x7f) ? '?' : static_cast<char>(c));
-  }
-  return out;
-}
-} // namespace
 
 int run_artifacts(const std::string& bundle_path) {
   try {
@@ -50,7 +37,7 @@ int run_artifacts(const std::string& bundle_path) {
       std::string paths;
       for (size_t i = 0; i < a.source_paths.size(); ++i) {
         if (i) paths += ", ";
-        paths += scrub(a.source_paths[i]);
+        paths += scrub_for_terminal(a.source_paths[i]);
       }
       std::cout << std::left
                 << std::setw(18) << sha
