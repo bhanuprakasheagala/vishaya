@@ -1,14 +1,3 @@
-# Demo directory
-
-Sample captures and conference-talk material. Not part of the product; delete freely.
-
-## Contents
-
-- **`produce-samples.sh`** — automation script. Runs vishaya against 7 benign targets and produces `.vishaya` bundles. Idempotent.
-- **`talk-script.md`** — timed walkthrough for a ~15-minute conference talk with all commands and expected output.
-- **`demo/samples/`** — ephemeral working output of the script; **gitignored** (host-specific, and a big/noisy set).
-- **`/samples/`** (repo root, **committed**) — a small curated subset kept in the repo as the *try-without-root* fixtures. See [`/samples/README.md`](../samples/README.md). Refresh with `sudo DEMO_DIR=samples ./demo/produce-samples.sh`.
-
 ## Quick start
 
 From the project root, on a Linux host with `vishaya` and the BPF object built:
@@ -40,7 +29,3 @@ sudo DEMO_DIR=/tmp/vishaya-demo \
 ```
 
 Add your own samples by editing `produce-samples.sh` — each capture is one `capture <slug> <binary> [args...]` call.
-
-## Using the samples in the talk
-
-See `talk-script.md` for a full segment-by-segment walkthrough of a ~15-minute conference demo built around these bundles.
