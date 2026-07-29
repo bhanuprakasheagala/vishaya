@@ -16,8 +16,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBBPF     REQUIRED libbpf>=0.8)
-pkg_check_modules(LIBZSTD    REQUIRED libzstd)
-pkg_check_modules(LIBARCHIVE REQUIRED libarchive)
+pkg_check_modules(LIBZSTD    REQUIRED libzstd>=1.4.0)
+pkg_check_modules(LIBARCHIVE REQUIRED libarchive>=3.4.0)  # zstd write filter support
 
 find_package(nlohmann_json 3.9 QUIET)
 if(NOT nlohmann_json_FOUND)
@@ -49,6 +49,23 @@ message(STATUS "  libarchive:    ${LIBARCHIVE_VERSION}")
 message(STATUS "  nlohmann_json: ${nlohmann_json_VERSION}")
 message(STATUS "  CLI11:         ${CLI11_VERSION}")
 message(STATUS "  OpenSSL:       ${OPENSSL_VERSION}")
+
+# ---------------------------------------------------------------------------
+# Security hardening (defense-in-depth). This binary parses hostile bundles and
+# `capture` runs as root, so the standard Linux hardening set is applied to every
+# target defined below. Cheap and widely supported by GCC/Clang.
+#   - stack-protector-strong: canary against stack smashing
+#   - _FORTIFY_SOURCE=2:      fortified libc calls (needs optimization → non-Debug)
+#   - PIE + full RELRO + BIND_NOW: ASLR for the executable, read-only GOT
+#   - -fno-strict-overflow:  no surprising signed-overflow optimizations
+# ---------------------------------------------------------------------------
+add_compile_options(
+  -fstack-protector-strong
+  -fno-strict-overflow
+  $<$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>,$<CONFIG:MinSizeRel>>:-D_FORTIFY_SOURCE=2>
+)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+add_link_options(-pie -Wl,-z,relro,-z,now)
 
 # ---------------------------------------------------------------------------
 # BPF object generation (delegated to scripts/linux.sh which knows the
