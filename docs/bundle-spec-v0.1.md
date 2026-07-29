@@ -145,7 +145,7 @@ Single top-level JSON object. UTF-8 encoded, no BOM. Pretty-printed (2-space ind
 | `integrity.process_tree_sha256` | string (hex, 64) | yes | SHA-256 of `process_tree.json` as stored in the tar. |
 | `integrity.artifacts_index_sha256` | string (hex, 64) | 0.2.0+ | SHA-256 of `artifacts.json` as stored in the tar. `""`/absent when artifact capture was not enabled. Being inside the signed manifest, this transitively covers every captured artifact (see §5A, §6). |
 | `sig` | object | no | Ed25519 signature block. Absent when signing is unavailable. Readers MUST NOT require this field and MUST verify it when present. |
-| `sig.algorithm` | string | yes (if `sig` present) | Signature algorithm. `Ed25519` in v0.1. |
+| `sig.algorithm` | string | yes (if `sig` present) | Signature algorithm. `Ed25519` is the only value defined so far. |
 | `sig.scope` | string | recommended | What the signature covers (see §6): `manifest-v1` = canonical manifest; `""`/absent = legacy two-hash payload. |
 | `sig.pubkey_b64` | string (base64) | yes (if `sig` present) | Ed25519 raw public key, base64-encoded (44 chars, 32 bytes decoded). |
 | `sig.sig_b64` | string (base64) | yes (if `sig` present) | Ed25519 signature over the payload defined by `sig.scope` (see §6), base64-encoded (88 chars, 64 bytes decoded). |
@@ -216,7 +216,7 @@ Fields are best-effort; any field MAY be empty string or `0` when the source eve
 
 ### 4.3 `family: "file"`
 
-**Kinds (v0.1):** `openat`, `unlinkat`, `renameat2`.
+**Kinds:** `openat`, `unlinkat`, `renameat2`.
 
 ```json
 "data": {
@@ -233,7 +233,7 @@ Fields are best-effort; any field MAY be empty string or `0` when the source eve
 
 ### 4.4 `family: "network"`
 
-**Kinds (v0.1):** `socket`, `socketpair`, `connect`, `accept`, `accept4`, `bind`, `listen`, `close`, `sendto`, `recvfrom`, `sendmsg`, `recvmsg`, `read`, `write`, `readv`, `writev`, `sendmmsg`, `recvmmsg`, `shutdown`, `getsockname`, `getpeername`, `setsockopt`, `getsockopt`, `dns-query`, `dns-answer`, `http-request`, `http-response`.
+**Kinds:** `socket`, `socketpair`, `connect`, `accept`, `accept4`, `bind`, `listen`, `close`, `sendto`, `recvfrom`, `sendmsg`, `recvmsg`, `read`, `write`, `readv`, `writev`, `sendmmsg`, `recvmmsg`, `shutdown`, `getsockname`, `getpeername`, `setsockopt`, `getsockopt`, `dns-query`, `dns-answer`, `http-request`, `http-response`.
 
 #### 4.4.1 Socket-level kinds (all except dns-*, http-*)
 
@@ -315,7 +315,7 @@ For `http-response`:
 }
 ```
 
-Only plaintext HTTP is captured in v0.1. HTTPS connections are recorded at the socket level (with endpoint and byte counts) but not decoded.
+Only plaintext HTTP is decoded. HTTPS connections are recorded at the socket level (with endpoint and byte counts) but not decoded.
 
 ### 4.5 `family: "syscall"` (opt-in)
 
@@ -455,7 +455,7 @@ A compliant writer:
 1. MUST write `manifest.json` as the first tar entry.
 2. MUST write all four required entries listed in §2.
 3. MUST populate every field marked `required` in §3.2.
-4. SHOULD emit events in ascending `ts_ns` order in `events.ndjson`. The v0.1 reference writer emits in kernel ring-buffer delivery order, which is approximately but not strictly sorted across CPUs; consumers needing strict order MUST sort (see §9.6). A future version may canonicalize the on-disk order.
+4. SHOULD emit events in ascending `ts_ns` order in `events.ndjson`. The reference writer emits in kernel ring-buffer delivery order, which is approximately but not strictly sorted across CPUs; consumers needing strict order MUST sort (see §9.6). A future version may canonicalize the on-disk order.
 5. MUST compute and populate `integrity.events_sha256` and `integrity.process_tree_sha256` correctly. When it emits `artifacts.json`, it MUST populate `integrity.artifacts_index_sha256` (computed before signing) and name each artifact tar entry `artifacts/<sha256>` matching the file's content hash and its `artifacts.json` record.
 6. MUST write to `<path>.tmp`, fsync, and atomically rename to `<path>` on completion.
 7. MUST NOT include personally-identifying data beyond what is explicitly permitted (uid/gid yes; env values no).

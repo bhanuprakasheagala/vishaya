@@ -84,7 +84,7 @@ Most common cause: **the BPF object was built before Step 6 (cgroup filter) or S
 
 ```bash
 ./scripts/linux.sh bpf
-sudo ./build/vishaya capture --target ... -o test.vishaya -- ...
+sudo ./build/vishaya capture --target ... --output test.vishaya -- ...
 ```
 
 Second cause: **cgroup filter blocked everything unexpectedly**. Verify: run `./build/vishaya capture` and check stderr for the line `collector: … cgroup_scoping=on/off`. If `on`, filter is active — but if the target somehow escapes its cgroup (very rare with our setup), events would be dropped.
@@ -110,7 +110,7 @@ Verify: `grep -c 'family":"network"' <extracted-events.ndjson>` — if 0, the ne
 ### `target launched: pid=… waiting for target` but nothing happens
 
 The target is running in isolation but never doing anything observable. Check:
-- Did you pass args correctly? `sudo vishaya capture --target /bin/sh -o t.vishaya -- -c "ls /"` (note the `--` separator).
+- Did you pass args correctly? `sudo vishaya capture --target /bin/sh --output t.vishaya -- -c "ls /"` (note the `--` separator).
 - Is the target reading from stdin and waiting? Most targets need `-c 'command'` or an actual file to operate on.
 
 ### `ring buffer poll failed: <errno>` in stderr
@@ -143,7 +143,7 @@ sudo kill <pids>                                       # or SIGKILL them
 sudo rmdir /sys/fs/cgroup/vishaya-<uuid>
 ```
 
-This is a known edge case (documented in the second-pass review); the bundle itself is fine.
+This is a known edge case; the bundle itself is fine.
 
 ## Inspect failures
 
@@ -197,7 +197,7 @@ zstd -d < case.vishaya | tar -xO events.ndjson | \
 
 If sendto/recvfrom events exist but no dns-query — the userspace protocol decoder didn't recognize the payload. Could be:
 - Payload was truncated (< 12 bytes; DNS header requires 12).
-- Payload was DNS-over-TLS or DNS-over-HTTPS (not decoded in v0.1).
+- Payload was DNS-over-TLS or DNS-over-HTTPS (not decoded).
 - Payload was to a non-port-53 DNS resolver (rare but possible).
 
 ### `vishaya network` shows connect/close but no http-request
@@ -207,14 +207,14 @@ HTTP requires:
 2. Plaintext HTTP (port 80 typically). HTTPS is encrypted — you'll see TCP connect + byte counts but no `http-request`.
 3. Target's HTTP method line + Host header fit in the first 128 bytes (usually true).
 
-If it's HTTPS (port 443), that's expected v0.1 behavior — encrypted payload can't be parsed without TLS keys.
+If it's HTTPS (port 443), that's expected behavior — encrypted payload can't be parsed without TLS keys.
 
 ## Meta: getting more information
 
 Enable debug logging for capture:
 
 ```bash
-sudo ./build/vishaya -v capture --target ... -o ... -- ...
+sudo ./build/vishaya -v capture --target ... --output ... -- ...
 ```
 
 You'll see `[DEBUG]` lines from the isolation setup, BPF load, cgroup attach, and Session lifecycle.

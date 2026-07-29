@@ -152,6 +152,6 @@ You'll see the schema version, tool version, kernel/arch/hostname, target binary
 ## Next
 
 - **What actually got captured, in detail?** → [event-reference.md](event-reference.md)
-- **How does all this work under the hood?** → [architecture.md](architecture.md) then [code-walkthrough.md](code-walkthrough.md)
-- **What's a cgroup, what's eBPF?** → [concepts.md](concepts.md)
+- **How does all this work?** → [concepts.md](concepts.md) → [architecture.md](architecture.md) → [flow.md](flow.md)
 - **What does the file format guarantee?** → [bundle-spec-v0.1.md](bundle-spec-v0.1.md)
+- **Where's the project headed?** → [roadmap.md](roadmap.md)

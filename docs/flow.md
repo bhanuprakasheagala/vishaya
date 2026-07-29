@@ -1,25 +1,29 @@
 # End-to-End Flow
 
+> *Optional. For tracing the code path when you're working on Vishaya — not needed to use it.
+> Just want to run it? See [getting-started.md](getting-started.md).*
+
 How Vishaya works from `sudo vishaya capture ...` to `vishaya tree case.vishaya`, with sequence and state diagrams. Diagrams use Mermaid syntax — they render natively on GitHub, GitLab, and modern markdown viewers (VS Code with the Mermaid extension, Obsidian, etc.).
 
 If you haven't read [concepts.md](concepts.md) yet, do that first — this document assumes you know what a cgroup and an eBPF probe are.
 
 ## 1. Capture flow — the big picture
 
-Ten steps, from user typing the command to bundle sitting on disk:
+From the user typing the command to the signed bundle on disk:
 
 ```mermaid
 flowchart TD
-    U([User: sudo vishaya capture --target X -o Y.vishaya])
+    U([User: sudo vishaya capture --target X --output Y.vishaya])
     U --> D[cli/dispatcher.cpp: route to capture_cmd]
     D --> S[capture_cmd: root check + signal handlers]
     S --> R1[Create TmpDir<br/>&#47;tmp&#47;vishaya-capture-uuid&#47;]
     R1 --> R2[Create Cgroup<br/>&#47;sys&#47;fs&#47;cgroup&#47;vishaya-uuid&#47;]
-    R2 --> SESS[Session ctor:<br/>1. Open WAL events.ndjson<br/>2. Load BPF object<br/>3. Attach all probes<br/>4. SetTargetCgroup]
+    R2 --> SESS[Session ctor:<br/>1. Open WAL events.ndjson<br/>2. Load BPF object<br/>3. Attach all probes<br/>4. SetTargetCgroup<br/>5. attach ArtifactCollector if --capture-artifacts]
     SESS --> LAUNCH[launch_target:<br/>fork + cgroup attach + unshare + exec]
     LAUNCH --> LOOP[Poll loop:<br/>waitpid WNOHANG + session.poll 100ms<br/>events flow: BPF → ringbuf → WAL]
     LOOP --> DRAIN[Target exits: 2x drain polls,<br/>session.stop, detach BPF]
-    DRAIN --> BUNDLE[bundle::write_bundle:<br/>reconstruct tree, hash, tar+zst, atomic rename]
+    DRAIN --> FIN[Snapshot surviving artifacts<br/>collector.finalize if enabled]
+    FIN --> BUNDLE[bundle::write_bundle:<br/>reconstruct tree, hash, sign, tar+zst, atomic rename]
     BUNDLE --> CLEAN[Cgroup + TmpDir destructors]
     CLEAN --> OUT([case.vishaya on disk])
 ```
@@ -97,6 +101,7 @@ sequenceDiagram
         K-->>Col: callback invoked with bytes
         Col-->>Sess: on_raw_event(bytes)
         Sess->>Sess: decode + enrich + serialize
+        Sess->>Sess: artifact observe(file event) if --capture-artifacts
         Sess->>Sess: WAL append line
         Sess->>Sess: synthesize DNS/HTTP if payload matches
         Sess->>Sess: WAL append synth line(s)
@@ -110,15 +115,20 @@ sequenceDiagram
     Col->>K: detach all probes + free BPF object
     Sess->>Sess: WalWriter dtor (close fd)
 
+    opt --capture-artifacts
+        Cap->>Cap: collector.finalize(artifacts_dir)<br/>copy + hash surviving files
+    end
+
     Cap->>Bnd: write_bundle(input)
     Bnd->>Bnd: reconstruct_tree from events.ndjson
-    Bnd->>Bnd: SHA-256 events + tree (OpenSSL EVP)
+    Bnd->>Bnd: SHA-256 events + tree (+ artifacts.json if any)
+    Bnd->>Bnd: sign manifest (Ed25519, scope=manifest-v1)
     Bnd->>Bnd: manifest_to_json
     Bnd->>K: libarchive: open case.vishaya.tmp
     Bnd->>K: write manifest.json (first)
     Bnd->>K: stream events.ndjson
     Bnd->>K: write process_tree.json
-    Bnd->>K: write artifacts/ dir entry
+    Bnd->>K: write artifacts/ dir (+ artifacts.json + artifacts/&lt;sha256&gt; if enabled)
     Bnd->>K: fsync(fd)
     Bnd->>K: rename(tmp → final)
 
@@ -196,12 +206,13 @@ When the target exits, `waitpid` returns the target PID and we break the loop. W
 
 `bundle::write_bundle(input)` does the finalize:
 
-1. `reconstruct_tree(events_path, root_pid)` — walks events.ndjson line by line, watches for process events, builds the parent→children graph rooted at the target.
-2. Computes SHA-256 of `events.ndjson` and `process_tree.json` using OpenSSL EVP.
-3. Fills in the manifest with schema/tool version, capture timing, host info, target info (path + SHA-256 + size + args + envp count), isolation info, coverage info, event counts, integrity hashes.
-4. `manifest_to_json` produces pretty-printed JSON.
-5. Uses libarchive to build a tar archive with zstd compression: writes `manifest.json` first (per spec §2 so streaming readers can validate version before decompressing the rest), then `events.ndjson` streamed from disk, then `process_tree.json`, then an empty `artifacts/` directory.
-6. `fsync`s the file to disk, then atomically `rename`s from `<path>.tmp` to `<path>`.
+1. If `--capture-artifacts` was set, `collector.finalize()` runs first (after `stop()`): it copies each surviving created/modified file into the scratch `artifacts/` dir, content-addressed by SHA-256, and returns an index of records.
+2. `reconstruct_tree(events_path, root_pid)` — walks events.ndjson line by line, watches for process events, builds the parent→children graph rooted at the target.
+3. Computes SHA-256 of `events.ndjson`, `process_tree.json`, and (when present) `artifacts.json` using OpenSSL EVP.
+4. Fills in the manifest with schema/tool version, capture timing, host info, target info (path + SHA-256 + size + args + envp count), isolation info, coverage info, event counts, integrity hashes — then **signs the canonical manifest with Ed25519** (`sig.scope = manifest-v1`), so the signature covers the metadata and, via the hashes, the content.
+5. `manifest_to_json` produces pretty-printed JSON.
+6. Uses libarchive to build a tar archive with zstd compression: writes `manifest.json` first (per spec §2 so streaming readers can validate version before decompressing the rest), then `events.ndjson` streamed from disk, then `process_tree.json`, then the `artifacts/` directory — and, when artifact capture was enabled, `artifacts.json` plus each `artifacts/<sha256>` file.
+7. `fsync`s the file to disk, then atomically `rename`s from `<path>.tmp` to `<path>`.
 
 **Cleanup (steps 58-61):**
 
@@ -244,25 +255,16 @@ sequenceDiagram
     CLI-->>U: (formatted output)
 ```
 
-For `vishaya files`, `network`, `timeline`, the pattern is nearly identical but instead of `process_tree()` we call `for_each_event(cb)` — the callback receives each event JSON, we filter by family and print a row.
+For `vishaya summary`, `files`, `network`, `timeline`, `verify`, `diff`, and `artifacts`, the pattern is nearly identical but instead of `process_tree()` we call `for_each_event(cb)` (or `artifacts()` / `verify()`) — the callback receives each event JSON, we filter by family and print a row. `verify` additionally recomputes the content hashes, checks the Ed25519 signature, and verifies each captured artifact.
 
 ## 5. Session state machine
 
-The Session's lifetime has three states. Understanding this helps debug capture failures.
-
-```mermaid
-stateDiagram-v2
-    [*] --> Constructing: Session ctor called
-    Constructing --> Started: WalWriter opened,<br/>BPF loaded + attached,<br/>started_=true
-    Constructing --> Failed: any step fails<br/>(throws CaptureError)
-    Failed --> [*]: dtor cleans up<br/>partial state
-    Started --> Started: poll() (many times)
-    Started --> Stopped: stop() called
-    Stopped --> Stopped: stop() idempotent
-    Stopped --> [*]: dtor
-```
-
-The `started_ = true` transition happens *immediately* after `Collector::Start()` succeeds. This is deliberate: if any subsequent line in the ctor throws (e.g., a log call), the destructor will call `stop()`, which will properly detach the BPF probes. Without that ordering, BPF handles would leak.
+The capture's BPF probes are alive exactly for the `Started` phase of the `Session` lifetime
+(`Constructing → Started → Stopped`, with any construction failure short-circuiting to `Failed`
+and unwinding through the destructors). The one invariant worth knowing when debugging a capture:
+`started_` is set the instant `Collector::Start()` succeeds, *before* any later constructor step
+that could throw — so the destructor always detaches the probes and never leaks BPF handles. The
+state diagram and full rationale live in [architecture.md §4](architecture.md).
 
 ## 6. Data flow: from syscall to bundle
 
@@ -312,10 +314,10 @@ What's actually inside `case.vishaya`:
 ```mermaid
 graph TD
     F[case.vishaya<br/>tar.zst archive]
-    F --> M[manifest.json<br/>schema + host + target + coverage + counts + integrity]
+    F --> M[manifest.json<br/>schema + host + target + coverage + counts + integrity + sig]
     F --> E[events.ndjson<br/>one JSON object per line, chrono order]
     F --> P[process_tree.json<br/>root_pid + processes with children arrays]
-    F --> A[artifacts/<br/>reserved dir, empty in v0.1]
+    F --> A[artifacts/&lt;sha256&gt; + artifacts.json<br/>captured files, only with --capture-artifacts]
 ```
 
 Order matters at the tar level: `manifest.json` is always the first entry, so a streaming reader can decode the version header and reject a v2 bundle before decompressing gigabytes of events. Everything else can be in any order (spec §2 only requires manifest-first).
@@ -323,6 +325,5 @@ Order matters at the tar level: `manifest.json` is always the first entry, so a 
 ## Where next
 
 - [architecture.md](architecture.md) — the design decisions behind why the flow looks like this
-- [code-walkthrough.md](code-walkthrough.md) — module-by-module tour of the code implementing these flows
 - [event-reference.md](event-reference.md) — what each event in the WAL looks like in detail
 - [troubleshooting.md](troubleshooting.md) — when the flow doesn't work

@@ -2,30 +2,24 @@
 
 What's shipped, what's coming, what's out of scope. Written for potential users deciding whether to build on Vishaya and for contributors looking for high-leverage places to help.
 
-Dates are intentional targets, not commitments. Everything is best-effort until v1.0.
-
-> **Reprioritized 2026-07 after a positioning research pass** ([research/2026-07-product-positioning.md](research/2026-07-product-positioning.md)). The differentiator is **verifiable + target-scoped + single-file evidence**, not "a portable capture format" (that niche is taken by `.scap`/Stratoshark). So v0.5 now leads with **chain-of-custody hardening** and **STIX export**; SCAP interop is **dropped**; MCP/LLM stay deferred; the web UI is **downgraded** (Stratoshark already owns "Wireshark-for-syscalls").
-
-## v0.1 — current
-
-**Status:** Builds and runs on Linux (aarch64 verified on a UTM VM); basic capture/inspect confirmed. Post-review fixes landed (exec capture, reader verification, BPF stack + mmsg layout, process-tree, wall-clock timeline). Per-feature status and open correctness/robustness items are tracked in [roadmap-decisions.md](roadmap-decisions.md) (detailed write-ups in [backlog.md](backlog.md)).
-
 Capabilities:
 - Target-scoped capture (cgroup v2 + mount namespace isolation)
 - Process, file, network events by default; syscall opt-in
 - DNS query/answer + plaintext HTTP request/response decoded from payload
+- Optional artifact capture (`--capture-artifacts`): dropped/modified files copied into
+  `artifacts/`, content-addressed, hashed, indexed, and verified
 - Single `.vishaya` bundle output: manifest + events + process tree + integrity hashes
 - Bundles signed by default with a local Ed25519 key; reader verifies integrity
-  hashes and signature at load time (tamper-evidence, not third-party attestation)
-- CLI subcommands: `capture`, `tree`, `files`, `network`, `timeline`
+  hashes, signature, and artifact content at load time (tamper-evidence, not attestation)
+- CLI subcommands: `capture`, `summary`, `tree`, `files`, `network`, `timeline`, `verify`, `diff`, `artifacts`
 - Standalone smoke tests: `isolation_probe`, `bundle_probe`
 - Complete documentation set
 
 Known limitations:
 - No HTTPS plaintext (encrypted, needs TLS-library uprobes)
 - No `sendmsg`/`recvmsg`/`sendmmsg`/`recvmmsg` payload capture (iovec paths uncovered)
-- No artifact extraction (dropped files, memory dumps)
-- No bundle diffing
+- Artifact capture is an end-of-capture snapshot (created-then-deleted files are recorded
+  but not extracted); no memory dumps
 - No `syscall_name` resolution (syscall events show number only)
 - Bundle format is pre-release; schema will evolve additively until v1.0
 
@@ -50,10 +44,10 @@ Additions (ordered by the repositioning — the first two are what make the pitc
 **Robustness (talk-worthy)**
 - Regression test + demo: a recursive-fork / high-volume target whose capture stays valid and self-reports drops, where nested-JSON sandboxes silently truncate (arXiv 2511.04472, CVE-2025-61301/-61303). Flat append-only NDJSON is the design property that makes this hold.
 
-**Artifact capture**
-- Files created/modified/deleted by the target are copied to `artifacts/` in the bundle
-- Bounded (configurable size limit per file, total limit per capture)
-- Each artifact has a companion metadata record: original path, size, SHA-256, event ID that created it
+**Artifact capture** — *shipped 2026-07 (v0.2)*
+- ✅ `--capture-artifacts` copies files the target created/modified into `artifacts/<sha256>` (content-addressed), bounded by `--artifact-max-size` / `--artifact-max-total` / `--artifact-max-count`.
+- ✅ An `artifacts.json` index records each file's SHA-256, size, mode, source path(s), and status; `integrity.artifacts_index_sha256` puts it under the signature; `vishaya verify` checks every artifact's content; `vishaya artifacts` lists them.
+- Limitation (v0.2): end-of-capture snapshot — a file created *and deleted* mid-run is recorded (`missing_at_finalize`) but not extracted. Copy-on-close is a future enhancement.
 
 **Bundle diffing** — *shipped 2026-07*
 - ✅ `vishaya diff a.vishaya b.vishaya` — **semantic** comparison (compares behaviour sets, not raw events, so PIDs/timestamps/addresses don't create noise).
@@ -77,7 +71,7 @@ Additions (ordered by the repositioning — the first two are what make the pitc
 - systemd unit for background captures (optional)
 
 **Better UX**
-- `vishaya --version` shows tool version + supported schema major
+- `vishaya --version` already prints the tool version; extend it to also show the supported schema major
 - `vishaya capture --dry-run` prints what would be captured without running the target
 - ✅ `vishaya summary` — one-screen verdict (trust + target + counts + tree + network + files) — *shipped 2026-07*
 - Colored output where appropriate (with `--no-color` opt-out)
@@ -144,10 +138,8 @@ Deliberately speculative. Things I *might* build if the format catches on:
 - Given N bundles, find shared indicators (endpoints, tools, TTPs)
 - Useful for tracking a malware family across samples
 
-**~~SCAP interop (embed `.scap` in the bundle)~~ — DROPPED (2026-07 research)**
-- Embedding a Sysdig `.scap` for Stratoshark interop means competing on the incumbent's own turf for little payoff. Vishaya's value is verifiable + scoped + single-file, not `.scap` compatibility. Cut.
 
-## Explicitly not planned (ever)
+## Explicitly not planned
 
 To keep scope disciplined, these are permanent non-goals:
 

@@ -6,11 +6,13 @@ Terms and acronyms that appear across Vishaya's docs and code. Alphabetical. Cro
 
 **Aggregator.** `bpf/vishaya.bpf.c` — the file that `#include`s the four probe files so they compile as one BPF translation unit.
 
+**Artifact.** A file the target created or modified during a capture. With `--capture-artifacts`, surviving artifacts are copied into the bundle under `artifacts/<sha256>` (*content-addressed*) and indexed in `artifacts.json`. See [bundle-spec-v0.1.md §5A](bundle-spec-v0.1.md).
+
 **Attack surface.** Everything an attacker can reach or influence. Vishaya reduces its own attack surface by needing root only for `capture`, running no daemon, and having no network listeners.
 
 **BPF (Berkeley Packet Filter).** Historically a packet filtering VM; modern usage means *eBPF*, the general-purpose in-kernel VM.
 
-**Bundle.** A single `.vishaya` file produced by a capture. Contains the manifest, event stream, process tree, and (v0.5+) artifacts. Portable across hosts and tool versions within the schema major.
+**Bundle.** A single `.vishaya` file produced by a capture. Contains the manifest, event stream, process tree, and — with `--capture-artifacts` — captured *artifacts*. Portable across hosts and tool versions within the schema major.
 
 **BTF (BPF Type Format).** Debug info the kernel exports about its own struct layouts, at `/sys/kernel/btf/vmlinux`. Vishaya uses it via *CO-RE* to make one BPF object work across kernel versions.
 
@@ -27,6 +29,8 @@ Terms and acronyms that appear across Vishaya's docs and code. Alphabetical. Cro
 **CO-RE (Compile Once, Run Everywhere).** eBPF portability technique: the compiled BPF object references struct fields symbolically, and libbpf relocates them at load time using the target kernel's *BTF*.
 
 **Collector.** The inherited `vishaya::collector` code that loads BPF, attaches probes, and polls the ring buffer. Historically the pre-pivot codebase.
+
+**Content-addressed.** Storing a file under a name derived from its own content hash (here, its SHA-256). Identical content dedups to one entry, and the name itself proves integrity. Vishaya stores artifacts this way (`artifacts/<sha256>`).
 
 **CSIRT (Computer Security Incident Response Team).** An organizational unit that does *IR*.
 
@@ -56,7 +60,7 @@ Terms and acronyms that appear across Vishaya's docs and code. Alphabetical. Cro
 
 **libbpf.** The C library for interacting with eBPF from userspace: loading, attaching, ring-buffer polling. Vishaya wraps it inside `vishaya::collector`.
 
-**Manifest.** The `manifest.json` file inside a bundle. Carries schema version, tool version, capture metadata, coverage info, event counts, integrity hashes.
+**Manifest.** The `manifest.json` file inside a bundle. Carries schema version, tool version, capture metadata, coverage info, event counts, integrity hashes, and the Ed25519 *signature* block. It is the signed payload (`sig.scope = manifest-v1`).
 
 **Mount namespace.** Linux namespace that isolates a process's view of mounted filesystems. Vishaya uses `unshare(CLONE_NEWNS)` in the child before exec to prevent target mounts from leaking.
 
@@ -81,6 +85,8 @@ Terms and acronyms that appear across Vishaya's docs and code. Alphabetical. Cro
 **Schema major.** The X in `schema_version: X.Y.Z`. Bundles with major > reader's major are rejected. Bundles with major ≤ reader's major are accepted; unknown fields are ignored.
 
 **Session.** The `vishaya::capture::Session` class — one instance per capture, wraps the BPF load/attach lifecycle and event pipeline.
+
+**Signature (Ed25519).** Every bundle's *manifest* is signed by default with an Ed25519 key (auto-generated at `~/.config/vishaya/keys/`); the reader verifies it at open time. Because the manifest holds the content hashes, one signature covers the whole bundle. Self-generated key = tamper-evidence + pinned-key verification (`--verify-key`), not third-party attestation. See [bundle-spec-v0.1.md §6](bundle-spec-v0.1.md).
 
 **Streaming reader.** A bundle consumer that reads the tar sequentially rather than extracting everything first. Vishaya's `Reader` supports this pattern (manifest parsed first without extracting events).
 

@@ -1,18 +1,21 @@
 # Concepts
 
+> *Optional. You don't need this to install or use Vishaya — it's a background primer for readers
+> new to eBPF, cgroups, or DFIR. Just want to run it? See [getting-started.md](getting-started.md).*
+
 Background primer for readers new to any part of the stack Vishaya sits on. Skim the sections you already know, read the ones you don't.
 
-## 1. What Vishaya is (and isn't)
+## 1. What Vishaya is
 
-Vishaya is a **forensic capture tool**. You point it at a suspicious Linux binary, it runs the binary in a controlled boundary and observes everything the binary does at the kernel level, and it packages the observation into a single portable file.
+Vishaya is a **forensic capture tool**: you point it at a suspicious Linux binary, it runs the
+binary in a controlled boundary, observes everything it does at the kernel level, and packages
+the run into a single portable, signed file. Its closest neighbour is a dynamic-analysis sandbox
+(Cuckoo, CAPE, DRAKVUF) — Vishaya is a modern, eBPF-native, single-bundle take on that idea for
+Linux, without the heavy VM orchestration. It is **not** an EDR, a SIEM, or a fleet monitor; for
+the full "what it is and deliberately isn't," see [vision.md](vision.md).
 
-That's a different job from three neighboring categories people often confuse it with:
-
-- **EDR (Endpoint Detection & Response)** — CrowdStrike, SentinelOne, Microsoft Defender. Watches production hosts continuously, alerts on suspicious patterns, sometimes takes automatic action. Optimized for throughput and low overhead across a fleet. **Vishaya doesn't do this** — it captures one specific target on demand, not everything happening everywhere.
-- **SIEM (Security Information & Event Management)** — Splunk, Elastic Security, Chronicle. Aggregates log streams from many sources, indexes them, lets analysts query. **Vishaya doesn't do this** — it produces a single file per case, not a stream into a database.
-- **Sandbox / dynamic analysis** — Cuckoo, CAPE, DRAKVUF, ANY.RUN. Detonates suspicious binaries in an isolated environment, produces a behavioral report. **This is the closest neighbor.** Vishaya is a modern, eBPF-native, portable-bundle-format take on that idea for Linux, without the heavy VM orchestration those tools require.
-
-The mental model: `.vishaya` file is to Linux host activity what `.pcap` file is to network activity. One file per session, portable, inspectable by any compatible tool.
+Mental model: one `.vishaya` is a self-contained *case file* for a single suspect binary — a
+portable, signed record of one run that any compatible tool can open.
 
 ## 2. eBPF in one page
 
@@ -65,24 +68,17 @@ Practical details:
 
 `unshare(CLONE_NEW*)` creates a new namespace and moves the calling process into it. `setns()` moves an existing process into an existing namespace.
 
-Vishaya v0.1 uses only the **mount namespace**. When we launch the target, we `unshare(CLONE_NEWNS)` in the child so any filesystem mounts the target does don't leak back to the host. We deliberately don't use the PID or network namespace in v0.1 for reasons documented in [architecture.md §6](architecture.md).
+Vishaya uses only the **mount namespace**. When we launch the target, we `unshare(CLONE_NEWNS)` in the child so any filesystem mounts the target does don't leak back to the host. We deliberately don't use the PID or network namespace for reasons documented in [architecture.md §6](architecture.md).
 
 ## 5. The fork / exec model
 
-Linux launches new processes in two steps:
-
-1. **`fork()`** duplicates the current process. The child gets an exact copy of the parent's memory, file descriptors, and state.
-2. **`execve()`** replaces the child's memory with the code of a new binary, keeping the file descriptors.
-
-Vishaya's [target_launch.cpp](../src/isolation/target_launch.cpp) does exactly this dance. The parent's job is to attach the child to the cgroup **before** the child does anything observable. So the flow is:
-
-1. Parent creates a **synchronization pipe** (two file descriptors, read and write ends).
-2. Parent forks. Both parent and child have both pipe ends now.
-3. Child immediately reads from the pipe (blocking).
-4. Parent writes the child's PID to `<cgroup>/cgroup.procs`, then writes one byte to the pipe.
-5. Child's read unblocks, child unshares the mount namespace, chdirs, execves the target binary.
-
-The pipe guarantees that between fork and exec, the child does nothing observable outside the cgroup. This means when we start seeing target events from the BPF probes, the target is already scoped.
+Linux starts a process in two steps: `fork()` duplicates the caller, then `execve()` replaces the
+child's image with the target binary. Vishaya uses this dance with one addition — a
+**synchronization pipe** so the parent can attach the child to the target cgroup *before* the child
+`execve`s. The child blocks on the pipe right after fork; the parent writes the child's PID to
+`<cgroup>/cgroup.procs`, then releases it. So by the time the target runs and its probes fire, it
+is already scoped and no host events leak in through a startup race. Full step-by-step:
+[flow.md §3](flow.md); code: [target_launch.cpp](../src/isolation/target_launch.cpp).
 
 ## 6. Process lineage
 
@@ -94,18 +90,13 @@ Malware analysis leans heavily on process trees: a suspicious binary spawning `s
 
 ## 7. Tar + Zstd bundle format
 
-`.vishaya` is a tar archive compressed with zstd. Both are extremely common Linux formats:
-
-- **tar** — bundles multiple files into one stream, preserving names and modes. No compression on its own.
-- **zstd (Zstandard)** — Facebook's compression algorithm, roughly gzip-quality compression at 2-5× the speed. Now standard in the Linux kernel.
-
-We picked this combo because:
-- It's inspectable with standard tools (`zstd -d | tar -tv`).
-- No new format to learn or invent.
-- Streaming both directions (a reader can validate the manifest header before decompressing the rest).
-- Zstd's compression handles the redundancy in JSON well (event streams compress ~5-10×).
-
-The tar layout inside is fixed by [bundle-spec-v0.1.md](bundle-spec-v0.1.md): `manifest.json` first, then `events.ndjson`, then `process_tree.json`, then an `artifacts/` directory. Manifest-first is important so streaming readers can validate schema version before decompressing gigabytes of events.
+`.vishaya` is a **tar** archive (bundles files into one stream, preserving names and modes)
+compressed with **zstd** (gzip-quality ratios at several times the speed; now standard in the
+Linux kernel). The pairing was chosen because it's inspectable with tools every analyst already
+has (`zstd -d | tar -tv`), invents no new container, streams in both directions, and compresses
+JSON event logs well (~5–10×). The exact entry order inside — `manifest.json` first, so a
+streaming reader can check the schema version before decompressing the rest — is defined by
+[bundle-spec-v0.1.md §2](bundle-spec-v0.1.md).
 
 ## 8. NDJSON
 
@@ -116,11 +107,19 @@ The tar layout inside is fixed by [bundle-spec-v0.1.md](bundle-spec-v0.1.md): `m
 
 The tradeoff is that it's not a valid single JSON document. Tools that expect JSON arrays (some `jq` invocations) need `--slurp` or similar.
 
-## 9. Integrity hashing
+## 9. Integrity hashing and signing
 
-`.vishaya` bundles carry SHA-256 hashes of `events.ndjson` and `process_tree.json` in the manifest. Readers can recompute those hashes and detect accidental corruption or deliberate tampering.
+`.vishaya` bundles carry SHA-256 hashes of `events.ndjson`, `process_tree.json`, and (when
+present) `artifacts.json` in the manifest. Readers recompute those hashes to detect accidental
+corruption or tampering.
 
-We don't cryptographically **sign** bundles in v0.1 — that would require agreeing on a key-management story (JOSE? OpenPGP? cosign?) that isn't a v0.1 decision. Integrity hashing gives us detection, not proof-of-origin. See [bundle-spec-v0.1.md §6](bundle-spec-v0.1.md).
+Bundles are also **cryptographically signed by default** — the manifest is signed with an
+Ed25519 key (auto-generated on first run), and the reader verifies the signature at open time.
+Because the manifest contains the content hashes, one signature covers the whole bundle. Honest
+scope: the key is *self-generated and travels in the bundle*, so a valid signature is strong
+**tamper-evidence** (the content matches the key that signed it) plus **pinned-key verification**
+(`vishaya verify --verify-key`) — not third-party attestation of *who* signed. Keyless
+attestation (Sigstore/Rekor) is the v1.0 milestone. See [bundle-spec-v0.1.md §6](bundle-spec-v0.1.md).
 
 ## 10. DFIR terminology
 
@@ -140,4 +139,4 @@ A few terms that come up if you read the docs or the vision:
 
 - [getting-started.md](getting-started.md) — do it, don't just read about it
 - [architecture.md](architecture.md) — how the pieces fit together, at the design-decision level
-- [code-walkthrough.md](code-walkthrough.md) — same pieces at the code level, module by module
+- [flow.md](flow.md) — the capture and inspect paths as sequence diagrams

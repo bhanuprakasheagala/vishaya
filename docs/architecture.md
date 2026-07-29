@@ -1,69 +1,74 @@
-# Vishaya — Architecture (v0.1)
+# Vishaya — Architecture
 
-This is the design reference for v0.1. Every decision here has been discussed and locked in. Changes to this document require an explicit decision, not drift.
+> *Optional. For contributors and reviewers of the code — not needed to install, run, or read a
+> bundle. Just want to use it? See [getting-started.md](getting-started.md).*
+
+The design reference for Vishaya (bundle schema 0.2.0). It explains how a capture flows from
+a target binary to a signed, verifiable `.vishaya` file, and why the pieces are shaped the way
+they are.
 
 Companion docs:
 - [vision.md](./vision.md) — product scope and principles
 - [flow.md](./flow.md) — sequence diagrams for capture and inspect paths
-- [code-walkthrough.md](./code-walkthrough.md) — module-by-module tour of the implementation
 - [concepts.md](./concepts.md) — background primer (eBPF, cgroups, namespaces, DFIR)
 - [bundle-spec-v0.1.md](./bundle-spec-v0.1.md) — bundle format specification
-- [build.md](./build.md) — CMake structure and dependency graph
 
 ---
 
 ## 1. Scope
 
-Vishaya v0.1 is a Linux-only, eBPF-native forensic capture tool that:
+Vishaya is a Linux-only, eBPF-native forensic capture tool that:
 
 1. Launches a target binary inside a scoped isolation boundary (namespaces + cgroup)
 2. Captures the target and its descendants via eBPF probes (process, file, network events)
-3. Writes everything to a single portable `.vishaya` bundle file
-4. Provides a CLI to inspect any `.vishaya` bundle offline
+3. Optionally copies the files the target created/modified into the bundle (`--capture-artifacts`)
+4. Writes everything to a single portable, signed `.vishaya` bundle file
+5. Provides a CLI to inspect and verify any `.vishaya` bundle offline
 
-Everything else (artifact extraction, diffing, DNS resolution correlation, HTTPS plaintext, LLM integration, SCAP interop) is deferred and does not shape the v0.1 architecture beyond ensuring the design does not preclude those additions later.
+Shipped since the initial design: artifact capture and semantic `diff` (both in v0.2), and
+Ed25519 signing/verification. Still deferred (and not shaping the architecture beyond staying
+additive): HTTPS plaintext via TLS uprobes and LLM/MCP integration. SCAP interop was evaluated
+and **dropped** — see [roadmap.md](./roadmap.md).
 
 ---
 
 ## 2. System overview
 
-Three layers plus one shared ABI:
+End to end: a target runs inside a kernel-enforced scope, eBPF records what it does, and the
+userspace pipeline packages it into one signed file that anyone can later verify and inspect.
 
 ```mermaid
-flowchart TB
-    subgraph K[Kernel]
-        TP[Tracepoints:<br/>sched_process_exec, sys_enter_openat, ...]
-        PRB[BPF probes:<br/>process, file, network, syscall]
-        RB[(Ring buffer<br/>16 MiB)]
-        TP --> PRB
+flowchart LR
+    T[Target binary<br/>+ its children]
+
+    subgraph SCOPE[Scoped boundary]
+        CG[cgroup v2<br/>+ mount namespace]
+    end
+
+    subgraph K[Kernel · eBPF CO-RE]
+        PRB[process · file · network probes<br/>cgroup-filtered]
+        RB[(ring buffer<br/>16 MiB)]
         PRB --> RB
     end
 
     subgraph U[Userspace]
-        COL[Collector<br/>bpf_object load/attach/poll]
-        DEC[Decoder → Enricher → JSON]
-        WAL[WAL writer<br/>events.ndjson]
-        PDC[Protocol decoder<br/>DNS + HTTP synthesis]
-        BW[Bundle writer<br/>tar+zstd+SHA-256]
-        RB --> COL
-        COL --> DEC
-        DEC --> WAL
-        DEC --> PDC
-        PDC --> WAL
-        WAL --> BW
+        PIPE[decode → enrich → NDJSON<br/>+ DNS / HTTP decode]
+        ART[artifact collector<br/>--capture-artifacts]
+        BW[bundle writer<br/>tar.zst · SHA-256 · Ed25519 sign]
+        PIPE --> BW
+        ART --> BW
     end
 
-    subgraph S[Shared ABI]
-        ES[include/event_schema.h]
-    end
-
-    ES -.->|struct layout| PRB
-    ES -.->|struct layout| DEC
-
-    BW --> OUT[(case.vishaya)]
+    T --> CG --> PRB
+    RB --> PIPE
+    RB -. file events .-> ART
+    BW --> OUT[(case.vishaya<br/>signed · self-contained)]
+    OUT --> INS[inspect · verify · diff<br/>no root, any machine]
 ```
 
-For detailed sequence diagrams of the capture and inspect flows, see [flow.md](./flow.md).
+The kernel and userspace sides share one C ABI, `include/event_schema.h` (struct layouts the
+BPF probes write and the decoder reads). For step-by-step sequence diagrams of the capture and
+inspect flows, see [flow.md](./flow.md).
 
 ---
 
@@ -90,17 +95,19 @@ User ─── vishaya capture --target ./sample.elf --output case.vishaya ─�
                                                                  ▼
                                                      /tmp/vishaya-<uuid>/
                                                      ├── events.ndjson
-                                                     └── artifacts/   (v0.5+)
+                                                     └── artifacts/   (--capture-artifacts)
 
                                                       (target exits or Ctrl-C)
                                                                  ▼
                                              ┌────────────────────────────────────┐
                                              │ bundle/writer                      │
                                              │  1. reconstruct process tree       │
-                                             │  2. build manifest.json            │
-                                             │  3. tar+zst → case.vishaya.tmp     │
-                                             │  4. fsync + rename → case.vishaya  │
-                                             │  5. teardown isolation, cleanup    │
+                                             │  2. snapshot artifacts (if enabled)│
+                                             │  3. SHA-256 events/tree/artifacts  │
+                                             │  4. sign manifest (Ed25519)        │
+                                             │  5. tar+zst → case.vishaya.tmp     │
+                                             │  6. fsync + rename → case.vishaya  │
+                                             │  7. teardown isolation, cleanup    │
                                              └───────────────────┬────────────────┘
                                                                  ▼
                                                             case.vishaya
@@ -123,7 +130,7 @@ User ─── vishaya tree case.vishaya ──┐
                           └──────┬─────────────┘
                                  ▼
                           ┌───────────────┐
-                          │ inspect/tree  │  (or summary/files/network/timeline/verify/diff)
+                          │ inspect/tree  │  (or summary/files/network/timeline/verify/diff/artifacts)
                           └───────┬───────┘
                                   ▼
                              stdout view
@@ -135,7 +142,7 @@ Capture requires root (eBPF + namespaces). Inspect requires no privileges — ju
 
 ## 4. Module layout
 
-Actual directory structure as of v0.1:
+Current module layout:
 
 ```
 bpf/                            (kernel-side probes)
@@ -230,7 +237,7 @@ The critical invariant: `started_ = true` is set *immediately* after `Collector:
 
 ---
 
-## 4. Bundle format (v0.1)
+## 4b. Bundle format
 
 Single file: `case.vishaya`. Container: `tar.zst`. Contents:
 
@@ -238,17 +245,22 @@ Single file: `case.vishaya`. Container: `tar.zst`. Contents:
 case.vishaya  (tar.zst)
 ├── manifest.json
 ├── events.ndjson
-└── process_tree.json
+├── process_tree.json
+├── artifacts/                (empty unless --capture-artifacts)
+│   └── <sha256>              (content-addressed captured files)
+└── artifacts.json            (artifact index; present only with --capture-artifacts)
 ```
 
-`artifacts/` directory reserved but empty in v0.1.
+`artifacts/` is empty and `artifacts.json` absent for a capture run without
+`--capture-artifacts` — byte-compatible with pre-artifact (0.1) bundles.
 
 ### manifest.json
 
 Top-level sections: `schema_version`, `tool`, `capture` (times + duration + a
 CLOCK_MONOTONIC↔CLOCK_REALTIME clock anchor + `host`), `target` (path, sha256, args,
-env_count), `isolation`, `coverage` (families + network_layers + syscalls_captured),
-`counts`, `integrity` (the two content SHA-256s), and `sig` (the Ed25519 signature block:
+env_count), `isolation`, `coverage` (families + network_layers + syscalls_captured +
+artifacts_captured), `counts` (incl. artifacts_count), `integrity` (SHA-256 of events,
+process_tree, and — when present — artifacts.json), and `sig` (the Ed25519 signature block:
 `algorithm`, `scope`, `pubkey_b64`, `sig_b64`).
 
 The **authoritative, complete, field-by-field schema lives in
@@ -275,7 +287,7 @@ each with pid/tgid/ppid/comm/exec_path/cmdline/cwd/uid/gid, `start_ts_ns`, nulla
 
 ---
 
-## 5. Event family coverage (v0.1)
+## 5. Event family coverage
 
 | Family | Enabled by default | Notes |
 |---|---|---|
@@ -289,14 +301,14 @@ each with pid/tgid/ppid/comm/exec_path/cmdline/cwd/uid/gid, `start_ts_ns`, nulla
 
 ---
 
-## 6. Isolation model (v0.1)
+## 6. Isolation model
 
 Target runs inside a fresh cgroup and a mount namespace:
 
 - **Cgroup v2** — the scoping mechanism. Target is placed in a fresh cgroup at capture start; all eBPF probes filter events by cgroup ID via `bpf_get_current_cgroup_id()` and drop events from any other cgroup. Children inherit the cgroup automatically → correctness is kernel-managed.
 - **Mount namespace** — target has an isolated view of the filesystem. `MS_REC | MS_PRIVATE` on `/` prevents mount changes from propagating back to the host.
-- **PID namespace** — deliberately NOT used in v0.1. Would require a double-fork trick (unshare + fork so the target becomes PID 1) that adds complexity without buying scoping — cgroup filter already handles that. Deferred to v0.5 if needed for container-like semantics.
-- **Network namespace** — deliberately NOT used in v0.1. Isolating the target's network without a veth pair means the target has no network at all (just loopback), which severely limits realistic malware analysis. Full net-ns + veth setup is deferred to v0.5.
+- **PID namespace** — deliberately NOT used. Would require a double-fork trick (unshare + fork so the target becomes PID 1) that adds complexity without buying scoping — cgroup filter already handles that. Deferred to v0.5 if needed for container-like semantics.
+- **Network namespace** — deliberately NOT used. Isolating the target's network without a veth pair means the target has no network at all (just loopback), which severely limits realistic malware analysis. Full net-ns + veth setup is deferred to v0.5.
 - **User namespace** — deliberately NOT used (see D3 below).
 
 The critical scoping invariant is cgroup-based, not namespace-based. Namespaces are for *isolation* (protecting host, controlling what target sees). Scoping (capturing only target activity) is 100% cgroup-driven.
@@ -306,13 +318,13 @@ The critical scoping invariant is cgroup-based, not namespace-based. Namespaces 
 ## 7. Design decisions (locked)
 
 ### D1. Single binary with subcommands
-`vishaya capture`, plus offline readers `vishaya summary`, `tree`, `files`, `network`, `timeline`, `verify`, and `diff`. Mental model: `git`, `docker`, `kubectl`. One artifact to install, one thing to explain.
+`vishaya capture`, plus offline readers `vishaya summary`, `tree`, `files`, `network`, `timeline`, `verify`, `diff`, and `artifacts`. Mental model: `git`, `docker`, `kubectl`. One artifact to install, one thing to explain.
 
 ### D2. Target scoping via cgroups v2 (not PID tracking)
-Target is placed in a fresh cgroup at capture start. All BPF probes filter events by cgroup ID via `bpf_get_current_cgroup_id()`. Children inherit the cgroup automatically → correctness is kernel-managed. Cleaner than maintaining a "watched PID" BPF map.
+Cgroup ID filtering, not a "watched PID" BPF map — children inherit the cgroup, so scoping is kernel-managed. Full rationale in §6.
 
 ### D3. Isolation = cgroup + mount namespace only, no PID/net/user namespaces
-Cgroup handles scoping (which is the core requirement). Mount namespace gives filesystem isolation cheaply. PID and net namespaces add real code complexity (double-fork for PID, veth setup for net) without contributing to scoping — deferred to v0.5+. User namespace causes real compat issues (uid mapping confuses many binaries and some malware); skipped permanently. We already require root for eBPF anyway.
+Cgroup scopes; mount namespace isolates the filesystem cheaply; PID/net/user namespaces are deliberately omitted. Rationale in §6.
 
 ### D4. Temp WAL to `/tmp/vishaya-<uuid>/`, finalize on target exit
 Events stream to a scratch directory during capture. On target exit (or SIGINT), the writer reconstructs the process tree, builds the manifest, tar+zst's the scratch dir into `.vishaya.tmp`, fsyncs, and renames to the final `.vishaya` (atomic write). Scratch dir cleaned up last. Survives long captures (no RAM ceiling) and interrupted captures (scratch dir still readable for salvage).
@@ -355,12 +367,12 @@ Explicitly avoided: dependency injection containers, plugin loaders, virtual bas
 | clang / LLVM | Apache-2 | Compile BPF programs |
 | kernel BTF | GPL-2 | CO-RE |
 | CMake | BSD-3 | Build system |
-| C++17 stdlib | (compiler) | Base language |
+| C++20 stdlib | (compiler) | Base language |
 | **libzstd** | BSD-3 | Bundle compression (new) |
 | **libarchive** | BSD-2 | Tar container read/write (new) |
 | **nlohmann/json** | MIT (header) | manifest + process_tree.json (new) |
 | **CLI11** | BSD-3 (header) | Subcommand arg parsing (new) |
-| **OpenSSL libcrypto** | Apache-2 | SHA-256 for integrity hashes (new; ubiquitous on Linux) |
+| **OpenSSL libcrypto** | Apache-2 | SHA-256 integrity hashes + Ed25519 signing/verification (new; ubiquitous on Linux) |
 | Catch2 or GoogleTest | BSL-1 / BSD-3 | Testing (test-only) |
 
 Total new dependencies: 4 small libraries. All BSD/MIT. All packaged in mainstream Linux distros.
@@ -375,11 +387,12 @@ Extension recipes for later work — none of these are built in v0.1, but the ar
 
 - **New event family (e.g., container attach events):** new enum tag in `event_schema.h`, new `.bpf.c` file, optionally new bundle section, optionally new `inspect/` subcommand. Old readers skip unknown event types.
 - **New bundle section (e.g., `signatures.yara`, `iocs.json`):** add to manifest section list, add file to bundle. Old readers skip unknown sections.
-- **New CLI subcommand (e.g., `vishaya diff`):** one new file in `src/inspect/`, added to dispatcher. No other code changes.
+- **New CLI subcommand (e.g., a future `vishaya export`):** one new file in `src/inspect/`, added to dispatcher. No other code changes — this is exactly how `summary`, `verify`, `diff`, and `artifacts` were added.
 - **New enrichment (e.g., DNS reverse lookup):** added to `capture/enricher.cpp`. Bundle format unchanged.
 - **HTTPS plaintext (v0.5+):** new uprobe attachments in `bpf/`, new event subtypes for `tls_read` / `tls_write`. Old bundles unaffected.
 - **LLM/MCP integration (deferred entirely):** separate binary or subcommand consuming existing `.vishaya` bundles. Bundle format unchanged.
-- **SCAP interop (deferred entirely):** either an optional embedded `.scap` inside the `.vishaya` container, or a separate `vishaya export --format scap` subcommand. Bundle format unchanged.
+
+(SCAP interop was considered here and **dropped** — see [roadmap.md](./roadmap.md) — but had it stayed, it would have fit the same additive pattern.)
 
 The three extension mechanisms — additive event types, additive manifest sections, additive CLI subcommands — cover essentially every future feature we've discussed. No plugin API or scripting layer is needed.
 
@@ -387,34 +400,14 @@ The three extension mechanisms — additive event types, additive manifest secti
 
 ## 11. Non-goals (architectural)
 
-- No runtime alerting, blocking, or policy enforcement (would require kernel-side decision hooks; explicitly out)
-- No fleet monitoring (would require aggregation infrastructure; explicitly out)
-- No Windows, Mac, BSD (would require abstracting the isolation layer; explicitly out)
-- No cloud dependencies (no telemetry, no update checks, no crash reporting)
-- No web UI or dashboard in v1
-- No third-party / notarized trust anchor in v0.1. Bundles ARE integrity-hashed
-  (SHA-256) and signed by default with a locally auto-generated Ed25519 key, and
-  the reader verifies both at load time. This is tamper-evidence, not third-party
-  attestation: the public key travels inside the manifest, so it proves internal
-  consistency, not identity. Keyless attestation (Sigstore/Rekor) is deferred to
-  a later version.
+The product non-goals live in [vision.md §6](./vision.md); this section only records the
+*architectural* reason each is out — i.e. what it would cost the design to add:
 
----
-
-## 12. Deferred decisions (revisit at v0.5)
-
-- Bundle event format: **NDJSON in v0.1**. Migration to a binary format (Cap'n Proto, FlatBuffers, or custom) is a v0.5+ decision if NDJSON becomes a bottleneck. Format version bump would handle it.
-- Whether to include an embedded `.scap` for Stratoshark/Falco interop (deferred; would be additive to the container).
-- Whether to add OCSF export as a subcommand (deferred).
-- Whether to add a web UI (deferred; CLI-first is a v1 principle).
-- HTTPS plaintext capture strategy — OpenSSL uprobes first, then GnuTLS/BoringSSL/Go/rustls case by case (deferred to v0.5+).
-
----
-
-## 13. What comes next
-
-1. **Bundle format spec** — a dedicated `docs/bundle-spec-v0.1.md` that pins the exact JSON schemas for `manifest.json` and `process_tree.json`, and the exact tar layout. That doc becomes the authoritative reference for both the writer (in-repo) and any future third-party reader.
-2. **Collector rework plan** — a small doc describing the concrete diff from the existing collector (JSON sink → WAL writer + bundle finalize) so the code work is scoped.
-3. **Isolation prototype** — the smallest possible standalone C++ program that spawns a target in the intended isolation, without eBPF, to prove the namespaces + cgroup setup works. Standalone because it's the riskiest new piece.
-
-Once those three are in place, v0.1 build proper begins.
+- No runtime alerting, blocking, or policy enforcement — would require kernel-side decision hooks.
+- No fleet monitoring — would require aggregation infrastructure.
+- No Windows, Mac, BSD — would require abstracting the isolation layer.
+- No cloud dependencies — no telemetry, no update checks, no crash reporting.
+- No web UI or dashboard in v1.
+- No third-party trust anchor yet: bundles are signed by default with a locally generated
+  Ed25519 key the reader verifies at load, which is tamper-evidence, not identity attestation
+  (the public key travels in the manifest). Keyless attestation (Sigstore/Rekor) is the v1.0 milestone.

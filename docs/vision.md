@@ -6,7 +6,7 @@
 
 Each capture is a Vishaya: a self-contained, signed bundle recording what a specific target process (and everything it spawned) did on a Linux host. The tool runs the target inside an isolation boundary, captures via eBPF, and writes the whole session to a single, integrity-checked file that any analyst, on any machine, can open, **verify**, and inspect — years later.
 
-> **Positioning note (2026-07).** A portable, multi-tool *capture format* already exists — Sysdig/CNCF's `.scap`, now readable in Stratoshark ("Wireshark for syscalls"). So Vishaya's edge is **not** "a portable capture format." It is the combination none of them offer: **verifiable (signed, tamper-evident) + target-scoped (one binary, not host- or fleet-wide) + a single self-contained evidence file.** See [research/2026-07-product-positioning.md](research/2026-07-product-positioning.md).
+> **Positioning note (2026-07).** A portable, multi-tool *capture format* already exists — Sysdig/CNCF's `.scap`, now readable in Stratoshark ("Wireshark for syscalls"). So Vishaya's edge is **not** "a portable capture format." It is the combination none of them offer: **verifiable (signed, tamper-evident) + target-scoped (one binary, not host- or fleet-wide) + a single self-contained evidence file.**
 
 ---
 
@@ -16,7 +16,7 @@ Three parts, deliberately small:
 
 1. **A capture engine** — attaches eBPF probes, launches a target inside a scoped isolation boundary (Linux namespaces + cgroups), records the target's process tree and its activity.
 2. **A portable bundle** — the `.vishaya` file. Single file. Self-contained. Versioned. Contains a manifest, event stream, process tree, and any captured artifacts.
-3. **A CLI** — reads a `.vishaya` bundle: a one-screen `summary`, structured views (process tree, files, network, timeline), `verify` (integrity + signature), and `diff` (compare two captures). Inspection needs no root.
+3. **A CLI** — reads a `.vishaya` bundle: a one-screen `summary`, structured views (process tree, files, network, timeline), `verify` (integrity + signature), `diff` (compare two captures), and `artifacts` (list captured files). Inspection needs no root.
 
 That's the whole product. Everything else is deferred until it's genuinely needed.
 
@@ -73,57 +73,15 @@ That's the whole persona. Analyst working on a specific binary, wanting a case f
 Explicit, to prevent scope creep:
 
 - Not an EDR. Not a SIEM. Not a fleet monitor.
-- **Not a containment boundary.** The cgroup + mount-namespace scope prevents *accidental* host contamination; it is not a hardened detonation chamber and a determined, root-adjacent sample can escape it. Adversarial samples belong inside a VM/hypervisor sandbox — with Vishaya running inside as the recorder.
+- **Not a containment boundary** — Vishaya records from inside whatever containment you already trust; it is not itself a hardened detonation chamber (the flight-recorder model in §5).
 - No runtime alerting, blocking, or policy enforcement.
 - No Windows.
 - No cloud dependencies. No SaaS.
 - No dashboard or web UI in v1.
 - Not aiming to replace Cuckoo, CAPE, Tracee, Stratoshark, or DRAKVUF. Vishaya complements them — it runs inside them and exports to them; different scope, different job.
-- No paid dependencies. No LLM/AI integration in v1 (kept as architectural headroom, not core scope).
+- No paid dependencies. No LLM/AI integration (kept as architectural headroom, not core scope).
 
 ## 7. Roadmap
 
-Two horizons only. Everything beyond v0.5 is explicitly deferred. Full detail — with the post-research keep/cut/defer decisions — lives in [roadmap.md](roadmap.md).
-
-### v0.1 — Shipped
-
-- `.vishaya` bundle format v0.1 spec — small, deliberately narrow.
-- Collector emits a signed bundle; CLI reads and **verifies** it.
-- CLI: `capture`, `tree`, `files`, `network`, `timeline`.
-- Target-scoping via namespace + cgroup wrapper.
-- Ed25519 signing + integrity verification at open time; wall-clock timeline.
-
-### v0.5 — Make the headline true, then useful
-
-Ordered by the repositioning (verifiable + scoped + single-file):
-
-1. **Harden chain-of-custody** — sign the whole manifest (not just the content hashes), print the signing-key fingerprint at capture, ship a dedicated `vishaya verify`, support pinned/trusted keys. This makes "verifiable" honest.
-2. **STIX 2.x export** (`vishaya export --format stix`) — bridge into existing DFIR pipelines; STIX/MAEC is the malware-behavior lingua franca, not a format we invent.
-3. **Bundle diffing** (`vishaya diff a.vishaya b.vishaya`) — same sample, two runs; environment-sensitive behavior.
-4. **Artifact extraction** (dropped files bundled + hashed, bounded).
-5. **Packaging** — single static binary + deb/rpm.
-6. **Robustness demo/tests** — prove capture survives recursive-fork/high-volume targets that truncate nested-JSON sandboxes.
-
-### v1.0 credibility milestone
-
-- **Sigstore/Rekor keyless attestation** — turns tamper-evidence into third-party-verifiable provenance.
-
-### Deferred (architecture allows, but not deciding now)
-
-- LLM / MCP integration — reinforced defer; not where the gap is.
-- SCAP interop / embedding `.scap` — competing on the incumbent's turf; low payoff.
-- OCSF export — STIX first; OCSF only if a consumer needs it.
-- Web UI — Stratoshark already owns "Wireshark-for-syscalls"; a small static/TUI viewer is optional, not a differentiator.
-- Extended event families (container context, syscall payload, LSM/d_path) — additive when needed.
-- Sandbox orchestrator adapters.
-
-The bundle-versioned + event-family-extensible architecture makes each of these additive rather than rewrites. That's the whole point of getting the foundation right early.
-
-## 8. Success (personal scope)
-
-- The tool is built, works, and produces genuinely useful captures.
-- A conference talk is delivered showing it live end-to-end.
-- The code is clean, small, and easy to explain to another engineer.
-- Deep learning of eBPF, Linux namespaces/cgroups, DFIR workflows, and forensic-format design happens along the way.
-
-That's the whole goal. Not a launch. Not a market entry. A well-built, unique thing worth showing.
+Kept deliberately short here — the authoritative, decision-annotated roadmap (with the
+post-research keep/cut/defer calls) lives in [roadmap.md](roadmap.md).

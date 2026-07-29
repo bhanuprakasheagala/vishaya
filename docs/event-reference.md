@@ -6,7 +6,7 @@ For the wire-level format (tar layout, integrity rules, versioning), see [bundle
 
 ## Common envelope
 
-Every event, regardless of family, is a single JSON object per line in `events.ndjson`. The top-level envelope is identical across all events:
+Every event is a single JSON object, one per line in `events.ndjson`. Kernel-sourced events share this top-level envelope:
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -22,6 +22,12 @@ Every event, regardless of family, is a single JSON object per line in `events.n
 | `container.cgroup_path` | string | Cgroup v2 path of the emitting process; empty string if unavailable |
 | `container.mount_ns_ino` | integer | Mount namespace inode number; `0` if unavailable |
 | `data` | object | Family+kind specific payload — every family has a different shape |
+
+> **Parser note:** the `container` object appears only on **kernel-sourced** events. The
+> four **synthetic** network kinds decoded in userspace — `dns-query`, `dns-answer`,
+> `http-request`, `http-response` — carry the other envelope fields (`ts_ns`, `family`,
+> `kind`, `pid`, `tgid`, `comm`, …) and their own `data`, but **do not include `container`**.
+> Treat `container` as optional.
 
 Events are written to `events.ndjson` in approximately chronological order — the kernel
 ring buffer is drained in delivery order, which can reorder slightly across CPUs. A
