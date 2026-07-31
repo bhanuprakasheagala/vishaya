@@ -1,0 +1,29 @@
+sudo ./build/vishaya capture --target /usr/bin/curl --capture-artifacts --output testme.vishaya -- https://example.com
+[2026-07-31T17:57:46.604Z] INFO  scratch=/tmp/vishaya-capture-729ac916a2f8ebdbd9b2ff343bc9d86e cgroup=/sys/fs/cgroup/vishaya-9a49e05a-952d-851d-6cb8-58165b0973f5
+[collector] config not found, using defaults: 
+[collector] process_probes all=on
+[collector] file_probes openat=on unlinkat=on renameat2=on
+[collector] network_probes all=on
+[collector] pid_allowlist_count=0
+[collector] uid_allowlist_count=0
+[collector] syscall_allowlist_count=0
+[collector] network_port_allowlist_count=0
+libbpf: failed to determine tracepoint 'syscalls/sys_exit_vfork' perf event ID: No such file or directory
+libbpf: prog 'on_sys_exit_vfork': failed to create tracepoint 'syscalls/sys_exit_vfork' perf event: No such file or directory
+[collector] attach failed for program 'on_sys_exit_vfork' (continuing)
+[collector] libbpf backend active, attached programs=59
+[collector] target_cgroup_id=10760 (scoping active)
+[2026-07-31T17:57:46.705Z] INFO  collector: backend=libbpf programs_attached=59/60 cgroup_scoping=on
+[2026-07-31T17:57:46.713Z] INFO  target launched: pid=10685 binary=/usr/bin/curl cgroup_id=10760
+[2026-07-31T17:57:46.713Z] INFO  target pid=10685
+<!doctype html><html lang="en"><head><title>Example Domain</title><link rel="icon" href="data:,"><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{background:#eee;width:60vw;margin:15vh auto;font-family:system-ui,sans-serif}h1{font-size:1.5em}div{opacity:0.8}a:link,a:visited{color:#348}</style></head><body><div><h1>Example Domain</h1><p>This domain is for use in documentation examples without needing permission. Avoid use in operations.</p><p><a href="https://iana.org/domains/example">Learn more</a></p></div></body></html>
+[2026-07-31T17:57:48.649Z] INFO  capture session stopped: events_written=185 events_dropped=0
+[2026-07-31T17:57:48.660Z] INFO  bundle signed (Ed25519, scope=manifest-v1, key f856701323a36268)
+[2026-07-31T17:57:48.664Z] INFO  bundle written: testme.vishaya (events=185, processes=1)
+[2026-07-31T17:57:48.664Z] INFO  bundle: testme.vishaya
+[2026-07-31T17:57:48.664Z] INFO  capture session stopped: events_written=185 events_dropped=0
+
+usernamea@ubuntu:~/Documents/vishaya$ ./build/vishaya artifacts testme.vishaya
+bundle: testme.vishaya
+
+(no artifacts captured — run capture with --capture-artifacts)
