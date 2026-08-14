@@ -1286,7 +1286,21 @@ static __always_inline int emit_network_exit_event(__u32 kind, __s64 ret_code) {
     add_socket_fd(out->peer_fd);
   }
 
-  if (kind == NETWORK_CLOSE && ret_code >= 0) {
+  if (kind == NETWORK_CLOSE) {
+    /*
+     * Delete regardless of ret_code. On Linux close(2) releases the fd even when
+     * it returns an error (EINTR/EIO are flush-time failures that still close the
+     * descriptor; EBADF means the fd was never a live socket, so a tracked socket
+     * fd cannot produce it). Gating on ret_code >= 0 left a stale is_socket entry
+     * after a failed close, so a later regular-file fd that reused the same number
+     * would be misclassified as socket I/O. delete_socket_fd() is idempotent, so
+     * removing a missing/stale entry is harmless.
+     *
+     * Residual (not addressed here): a process that exits WITHOUT close()ing its
+     * sockets leaves its entries behind (the kernel auto-closes at exit, emitting
+     * no close syscall). Reaping those needs bpf_for_each_map_elem() over
+     * socket_fd_state keyed by the exiting tgid in the process-exit tracepoint.
+     */
     delete_socket_fd(out->fd);
   }
 
