@@ -350,8 +350,8 @@ std::vector<std::string> try_decode_http(const network_event& e) {
     data["http"]      = std::move(http);
     env["data"]       = std::move(data);
     // Payload-derived strings (DNS qname, HTTP host/path) can carry non-UTF-8
-  // bytes; use the 'replace' handler so dump() never throws and drops the event.
-  out.push_back(env.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace));
+    // bytes; use the 'replace' handler so dump() never throws and drops the event.
+    out.push_back(env.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace));
     return out;
   }
 
