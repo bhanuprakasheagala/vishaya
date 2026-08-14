@@ -33,7 +33,7 @@ VISHAYA=/path/to/vishaya sudo ./tests/run-tests.sh
 VISHAYA_TEST_BUNDLE=/path/to/case.vishaya ./tests/run-tests.sh   # inspect/integrity without capturing
 ```
 
-Output is `✓ PASS` / `✗ FAIL` / `• SKIP` per case, with a summary. **Exit code is
+Output is `[PASS]` / `[FAIL]` / `[SKIP]` per case, with a summary. **Exit code is
 0 only if nothing failed** (skips don't fail the run), so it's CI-friendly.
 
 If something misbehaves, re-run with `bash -x tests/run-tests.sh` to trace it.

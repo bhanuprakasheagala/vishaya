@@ -396,6 +396,25 @@ if [ -s "$GOOD_BUNDLE" ] && [ "$CAN_BUNDLE" = 1 ]; then
     skip "E10 manifest-metadata tamper" "good bundle unsigned"
   fi
 
+  # E10b (F1): adding an UNKNOWN field to a signed manifest must invalidate the
+  # signature. Verification canonicalizes the ON-DISK manifest bytes (spec §6), so
+  # a field this reader doesn't model still counts — a struct-round-trip verifier
+  # would silently drop it and wrongly report VALID. Inject with a byte-level edit
+  # (not jq, which would also mangle the 64-bit clock ints and mask the point):
+  # keep the leading "{" line, add the field, then append the rest verbatim.
+  if [ "$SIGNED" = 1 ]; then
+    d="$WORK/unknownfield"; tb="$WORK/unknownfield.vishaya"
+    repack_extract "$GOOD_BUNDLE" "$d"
+    { printf '{\n  "zz_injected_unknown_field": "attacker-controlled",\n'; \
+      tail -n +2 "$d/manifest.json"; } > "$d/manifest.json.tmp" \
+      && mv "$d/manifest.json.tmp" "$d/manifest.json"
+    repack_finish "$d" "$tb"
+    verr="$("$VISHAYA" tree "$tb" 2>&1 >/dev/null)"
+    assert_contains "E10b (F1) unknown-field manifest tamper -> signature INVALID" "$verr" "signature INVALID"
+  else
+    skip "E10b unknown-field manifest tamper" "good bundle unsigned"
+  fi
+
   # E11: `vishaya verify` on a good bundle -> exit 0, clear verdict.
   vout="$("$VISHAYA" verify "$GOOD_BUNDLE" 2>/dev/null)"
   assert_ok "E11 verify good bundle exits 0" "$VISHAYA" verify "$GOOD_BUNDLE"

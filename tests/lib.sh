@@ -28,12 +28,12 @@ info()  { printf '%s[info]%s %s\n'  "$C_CYN" "$C_RST" "$*"; }
 warn()  { printf '%s[warn]%s %s\n'  "$C_YEL" "$C_RST" "$*" >&2; }
 group() { printf '\n%s══ %s ══%s\n' "$C_CYN" "$*" "$C_RST"; }
 
-pass() { PASS_COUNT=$((PASS_COUNT+1)); printf '  %s✓ PASS%s %s\n' "$C_GRN" "$C_RST" "$1"; }
-skip() { SKIP_COUNT=$((SKIP_COUNT+1)); printf '  %s• SKIP%s %s%s%s\n' "$C_YEL" "$C_RST" "$1" "${2:+ — }" "${2:-}"; }
+pass() { PASS_COUNT=$((PASS_COUNT+1)); printf '  %s[PASS]%s %s\n' "$C_GRN" "$C_RST" "$1"; }
+skip() { SKIP_COUNT=$((SKIP_COUNT+1)); printf '  %s[SKIP]%s %s%s%s\n' "$C_YEL" "$C_RST" "$1" "${2:+ — }" "${2:-}"; }
 fail() {
   FAIL_COUNT=$((FAIL_COUNT+1))
   FAILED_NAMES+=("$1")
-  printf '  %s✗ FAIL%s %s\n' "$C_RED" "$C_RST" "$1"
+  printf '  %s[FAIL]%s %s\n' "$C_RED" "$C_RST" "$1"
   [ -n "${2:-}" ] && printf '        %s%s%s\n' "$C_DIM" "$2" "$C_RST"
   return 0
 }
