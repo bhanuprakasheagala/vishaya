@@ -9,6 +9,7 @@
 ![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?style=flat-square&logo=cplusplus&logoColor=white)
 ![eBPF CO-RE](https://img.shields.io/badge/eBPF-CO--RE-F7941E?style=flat-square)
 ![Status](https://img.shields.io/badge/status-v0.2%20pre--release-yellow?style=flat-square)
+![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 
 Run one suspect binary inside a scoped boundary, record everything it does — and every process it spawns — at the kernel level, and get a **single signed file** anyone can open, **cryptographically verify**, and inspect years later, on any machine. No agent, no database, no cloud.
 
@@ -84,7 +85,7 @@ zstd -dc samples/04-http-curl.vishaya | tar -xO events.ndjson | jq
 ```mermaid
 flowchart TB
     subgraph CAP[Capture · runs as root]
-        direction LR
+        direction TB
         T[Target binary<br/>+ children]
         subgraph SCOPE[Scoped boundary]
             CG[cgroup v2<br/>+ mount ns]
@@ -113,7 +114,7 @@ A target runs inside a kernel-enforced cgroup scope; eBPF records its process/fi
 
 Plenty of tools trace Linux processes, and a portable capture format already exists (Sysdig/CNCF's `.scap`, viewable in Stratoshark). Vishaya's edge isn't "a capture format" — it's the **combination none of them offer**:
 
-| | |
+| What sets it apart | Why it matters |
 |---|---|
 | **Verifiable evidence, not just telemetry** | Every bundle is SHA-256 integrity-hashed and Ed25519-signed; the reader checks both at open time. `.scap`, Tracee `--capture`, and CAPE output are all unsigned. *(Self-generated key today = tamper-evidence + pinned-key verification; third-party attestation is the v1.0 Sigstore milestone.)* |
 | **Target-scoped, not host- or fleet-wide** | Falco, Tetragon, Tracee, even `.scap` watch the whole host. Vishaya observes exactly one target and its descendants, filtered in-kernel by cgroup — a capture is a *case*, not a firehose. |
@@ -242,3 +243,9 @@ Everything lives in **[docs/](docs/index.md)**. Good entry points:
 - [**vision.md**](docs/vision.md) — what Vishaya is, and the deliberate non-goals
 - [**bundle-spec-v0.1.md**](docs/bundle-spec-v0.1.md) — the `.vishaya` format, for anyone building a reader
 - [**roadmap.md**](docs/roadmap.md) — what's shipped, what's next, what's out of scope
+
+---
+
+<div align="center">
+<sub>MIT licensed · Linux only · no daemon, no cloud, no telemetry</sub>
+</div>
