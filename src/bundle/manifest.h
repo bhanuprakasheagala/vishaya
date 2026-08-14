@@ -110,6 +110,29 @@ Manifest manifest_from_json(const std::string& json);
 // compact) so the writer and a reader compute identical bytes from the same
 // Manifest. Because it includes integrity.events_sha256 / process_tree_sha256,
 // signing this transitively covers the captured content as well as all metadata.
+//
+// This is the WRITER side: the producer holds the full Manifest it is about to
+// write, so serializing the struct is exactly the bytes on disk (minus `sig`).
+// A verifier that only has the on-disk file MUST use
+// manifest_canonical_signing_payload() instead (see below).
 std::string manifest_signing_payload(const Manifest& m);
+
+// Verifier-side canonical payload for a "manifest-v1" signature, computed from
+// the raw on-disk manifest.json bytes rather than a typed Manifest. It parses the
+// bytes, drops the `sig` key, and re-serializes compact with lexicographic keys
+// (nlohmann's default), which is exactly the payload the writer signed for a
+// manifest that carries only modeled fields — so existing signatures still verify.
+//
+// Why not reuse manifest_signing_payload(const Manifest&) on the reader side:
+// parsing into the typed Manifest silently DROPS any field this build does not
+// model, so round-tripping the struct would (a) reject an authentic newer-minor
+// bundle whose extra fields an older reader can't represent, and (b) let an
+// attacker add/remove unknown fields without breaking the signature. Verifying
+// over the on-disk bytes (spec §6) preserves unknown fields, so it is both
+// forward-compatible across additive schema minors and tamper-complete.
+//
+// `manifest_json` must be a JSON object (the reader has already parsed it once via
+// manifest_from_json before calling this). Throws BundleError on parse failure.
+std::string manifest_canonical_signing_payload(const std::string& manifest_json);
 
 } // namespace vishaya::bundle

@@ -131,6 +131,27 @@ std::string manifest_signing_payload(const Manifest& m) {
   return j.dump();           // compact + nlohmann's deterministic key order
 }
 
+std::string manifest_canonical_signing_payload(const std::string& manifest_json) {
+  // Canonicalize the manifest EXACTLY as it exists on disk, minus `sig`, instead
+  // of round-tripping through the typed Manifest (which would drop any field this
+  // build doesn't model). See manifest.h for the full rationale. nlohmann's
+  // default json is std::map-backed, so dump() emits keys lexicographically at
+  // every nesting level — byte-for-byte identical to manifest_signing_payload()
+  // (the writer side) for a manifest that carries only modeled fields.
+  json j;
+  try {
+    j = json::parse(manifest_json);
+  } catch (const json::parse_error& e) {
+    // The reader parses the same bytes via manifest_from_json before reaching
+    // here, so this is unreachable in practice; surface it as a BundleError to
+    // honor the contract rather than leaking a json exception.
+    throw BundleError(std::string("manifest re-parse for signature failed: ") +
+                      e.what());
+  }
+  if (j.is_object()) j.erase("sig");  // the signature cannot cover itself
+  return j.dump();                    // compact + deterministic key order
+}
+
 Manifest manifest_from_json(const std::string& jstr) {
   json j;
   try {

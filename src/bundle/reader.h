@@ -94,6 +94,10 @@ class Reader {
 
   std::string                 bundle_path_;
   Manifest                    manifest_;
+  // Raw manifest.json bytes as stored in the bundle. Kept so a "manifest-v1"
+  // signature is verified over the exact on-disk canonical bytes (spec §6),
+  // preserving fields this build doesn't model — see manifest_canonical_signing_payload().
+  std::string                 manifest_raw_json_;
   ProcessTree                 process_tree_;
   bool                        process_tree_loaded_ = false;
   std::vector<ArtifactRecord> artifacts_;

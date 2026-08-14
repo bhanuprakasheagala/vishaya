@@ -19,6 +19,17 @@ using json = nlohmann::json;
 
 // Ensures a record exists for tgid, seeded with basic identity fields from the
 // event envelope. Returns a reference to the record in the map.
+//
+// Known limitation (TGID reuse): records are keyed by tgid alone, so if the
+// kernel recycles a tgid within one capture (process A exits, B reuses the
+// number), A and B collapse into a single record — later exec/exit fields
+// overwrite or attach to the wrong lifecycle, and a `children` edge to that tgid
+// is ambiguous. A race-free fix needs per-node identity keyed on (tgid,
+// start-time); process events already carry data.start_time_ticks, but file/
+// network headers do not, so the complete fix is an event-schema change (add a
+// start-time to the shared event_header) — deferred to a schema bump, matching
+// the same note in capture/event_to_json.cpp. Rare for short, target-scoped
+// captures; likelier under fork-heavy or long-running targets.
 ProcessRecord& touch_record(std::unordered_map<int32_t, ProcessRecord>& by_tgid,
                             const json& e,
                             int32_t     tgid) {

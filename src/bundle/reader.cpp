@@ -101,6 +101,7 @@ Reader::Reader(const std::string& bundle_path) : bundle_path_(bundle_path) {
   }
   const std::string bytes = read_entry_bytes(h.get());
   manifest_ = manifest_from_json(bytes);  // enforces schema major check
+  manifest_raw_json_ = bytes;             // keep for on-disk signature canonicalization (spec §6)
   log::debug("bundle opened: " + bundle_path_ +
              " schema=" + manifest_.schema_version +
              " events=" + std::to_string(manifest_.counts.events_total));
@@ -344,7 +345,12 @@ VerifyReport Reader::verify() {
     // signed only the two content hashes. Branch so old bundles still verify.
     std::string signed_payload;
     if (manifest_.sig.scope == "manifest-v1") {
-      signed_payload = manifest_signing_payload(manifest_);
+      // Verify over the canonical ON-DISK manifest bytes (spec §6), NOT a
+      // re-serialization of the typed Manifest — the latter drops fields this
+      // build doesn't model, which would falsely reject authentic newer-minor
+      // bundles and miss injected unknown fields. Re-parse is safe: the ctor
+      // already parsed these exact bytes via manifest_from_json.
+      signed_payload = manifest_canonical_signing_payload(manifest_raw_json_);
     } else {
       signed_payload = manifest_.integrity.events_sha256 + "\n" +
                        manifest_.integrity.process_tree_sha256 + "\n";
