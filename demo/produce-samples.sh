@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Vishaya sample-capture producer.
 # Runs a series of benign targets through `vishaya capture` and writes numbered
-# .vishaya bundles into ./demo/samples/ (or $DEMO_DIR). Safe to re-run;
+# .vishaya bundles into ./samples/ (or $DEMO_DIR). Safe to re-run;
 # existing bundles are overwritten.
 #
 # Requirements: Linux, root, ./build/vishaya + ./bpf/vishaya.bpf.o built.
@@ -16,7 +16,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VISHAYA="${VISHAYA:-${ROOT_DIR}/build/vishaya}"
 BPF_OBJ="${BPF_OBJ:-${ROOT_DIR}/bpf/vishaya.bpf.o}"
-DEMO_DIR="${DEMO_DIR:-${ROOT_DIR}/demo/samples}"
+DEMO_DIR="${DEMO_DIR:-${ROOT_DIR}/samples}"
 
 pass() { echo "[pass] $1"; }
 warn() { echo "[warn] $1"; }
@@ -119,4 +119,4 @@ echo "  ${VISHAYA} timeline ${DEMO_DIR}/01-ls-etc.vishaya"
 echo "  ${VISHAYA} verify   ${DEMO_DIR}/04-http-curl.vishaya"
 echo
 echo "To refresh the committed try-without-root fixtures:"
-echo "  sudo DEMO_DIR=samples $0   &&   git add samples/*.vishaya"
+echo "  sudo $0   &&   git add samples/*.vishaya"
