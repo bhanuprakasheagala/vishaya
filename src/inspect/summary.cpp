@@ -150,20 +150,20 @@ int run_summary(const std::string& bundle_path) {
     std::cout << "Vishaya capture — " << bundle_path << "\n";
 
     std::string trust = "  ";
-    trust += report.integrity_ok ? "✓ integrity OK" : "✗ integrity MISMATCH";
+    trust += report.integrity_ok ? "[+] integrity OK" : "[x] integrity MISMATCH";
     if (!report.signature_present) {
-      trust += "   • unsigned";
+      trust += "   [-] unsigned";
     } else if (report.signature_ok) {
-      trust += "   ✓ signature VALID (Ed25519 " +
+      trust += "   [+] signature VALID (Ed25519 " +
                vishaya::bundle::pubkey_fingerprint(m.sig.pubkey_b64) + ")";
     } else {
-      trust += "   ✗ signature INVALID";
+      trust += "   [x] signature INVALID";
     }
     if (!report.artifacts_index_ok || !report.artifacts_content_ok) {
-      trust += "   ✗ artifacts TAMPERED";
+      trust += "   [x] artifacts TAMPERED";
     }
     if (m.counts.events_dropped > 0) {
-      trust += "   ⚠ " + std::to_string(m.counts.events_dropped) +
+      trust += "   [!] " + std::to_string(m.counts.events_dropped) +
                " events dropped (reduced confidence)";
     }
     std::cout << trust << "\n\n";

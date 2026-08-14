@@ -126,7 +126,7 @@ int run_diff(const std::string& bundle_a, const std::string& bundle_b) {
   if (fb.target_sha.size() >= 12) std::cout << " (sha " << fb.target_sha.substr(0, 12) << "…)";
   std::cout << "\n";
   if (!fa.target_sha.empty() && !fb.target_sha.empty() && fa.target_sha != fb.target_sha) {
-    std::cout << "  ⚠ different target binaries — behavioural diff may not be meaningful\n";
+    std::cout << "  [!] different target binaries — behavioural diff may not be meaningful\n";
   }
   std::cout << "  legend: '-' only in A, '+' only in B\n";
 
