@@ -93,14 +93,14 @@ You'll see stderr log lines showing each step and a final `bundle: /tmp/curl.vis
 None of the inspect subcommands need root — the bundle is a plain file you can read anywhere.
 
 ```bash
-./build/vishaya summary  /tmp/curl.vishaya          # start here
-./build/vishaya tree     /tmp/curl.vishaya
-./build/vishaya files    /tmp/curl.vishaya
-./build/vishaya network  /tmp/curl.vishaya
-./build/vishaya timeline /tmp/curl.vishaya
-./build/vishaya verify    /tmp/curl.vishaya          # integrity + signature verdict
-./build/vishaya diff      run-a.vishaya run-b.vishaya # what changed between two runs
-./build/vishaya artifacts /tmp/curl.vishaya          # files the target dropped/modified
+./build/vishaya summary   /tmp/curl.vishaya    # start here
+./build/vishaya tree      /tmp/curl.vishaya
+./build/vishaya files     /tmp/curl.vishaya
+./build/vishaya network   /tmp/curl.vishaya
+./build/vishaya timeline  /tmp/curl.vishaya
+./build/vishaya verify    /tmp/curl.vishaya    # integrity + signature verdict
+./build/vishaya diff      run-a.vishaya run-b.vishaya  # what changed between two runs
+./build/vishaya artifacts /tmp/curl.vishaya    # files the target dropped/modified
 ```
 
 - **`summary`** — the one-screen verdict: trust status (integrity + signature), target, event counts, a shallow process tree, notable DNS/HTTP/endpoints, and files created/deleted/renamed. Reach for it first.

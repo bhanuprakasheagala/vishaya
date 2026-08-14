@@ -215,7 +215,7 @@ Synthesized by the userspace protocol decoder from TCP send/recv payloads that s
 Coverage caveats:
 - Recognized methods: GET, POST, PUT, DELETE, HEAD, PATCH, OPTIONS, CONNECT, TRACE.
 - HTTPS traffic is not decoded (payload is encrypted). HTTPS connections still appear as socket-level events (with endpoint and byte counts).
-- Payload capture (up to 128 bytes) fires on all send/recv paths: `sendto`, `recvfrom`, `read`, `write`, `readv`, `writev`, `sendmsg`, `recvmsg`, `sendmmsg`, `recvmmsg`.
+- Payload capture (up to 128 bytes) fires on all send/recv paths: `sendto`, `recvfrom`, `read`, `write`, `readv`, `writev`, `sendmsg`, `recvmsg`, `sendmmsg`, `recvmmsg`. For the vectored paths (`readv`/`writev`/`sendmsg`/`recvmsg`) only the **first `iovec` segment** is captured; for `sendmmsg`/`recvmmsg`, only the first message's first segment. A protocol header that begins beyond the first segment is therefore not decoded.
 
 ## family: `syscall`
 

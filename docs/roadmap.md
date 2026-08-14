@@ -17,7 +17,8 @@ Capabilities:
 
 Known limitations:
 - No HTTPS plaintext (encrypted, needs TLS-library uprobes)
-- No `sendmsg`/`recvmsg`/`sendmmsg`/`recvmmsg` payload capture (iovec paths uncovered)
+- Payload capture reads only the **first iovec segment** (and, for `sendmmsg`/`recvmmsg`, the
+  first message); a protocol header split across segments or beyond the first is not decoded
 - Artifact capture is an end-of-capture snapshot (created-then-deleted files are recorded
   but not extracted); no memory dumps
 - No `syscall_name` resolution (syscall events show number only)
@@ -30,10 +31,10 @@ Known limitations:
 Additions (ordered by the repositioning — the first two are what make the pitch true):
 
 **Chain-of-custody hardening (priority — makes "verifiable" honest)** — *shipped 2026-07*
-- ✅ Sign the *entire* manifest (`sig.scope="manifest-v1"`), not just the two content hashes, so counts/host/target/timestamps are covered too (legacy two-hash bundles still verify).
-- ✅ Print the signing-key fingerprint at capture time for out-of-band recording.
-- ✅ Dedicated `vishaya verify <bundle>` with a loud, explicit verdict (integrity + signature).
-- ✅ Pinned / trusted-key verification (`vishaya verify --verify-key`), so a consumer can assert *who* signed.
+- **Done** — Sign the *entire* manifest (`sig.scope="manifest-v1"`), not just the two content hashes, so counts/host/target/timestamps are covered too (legacy two-hash bundles still verify).
+- **Done** — Print the signing-key fingerprint at capture time for out-of-band recording.
+- **Done** — Dedicated `vishaya verify <bundle>` with a loud, explicit verdict (integrity + signature).
+- **Done** — Pinned / trusted-key verification (`vishaya verify --verify-key`), so a consumer can assert *who* signed.
 - Remaining: the key is still self-generated (tamper-evidence, not attestation) — see the v1.0 Sigstore/Rekor milestone.
 
 **STIX 2.x export**
@@ -45,18 +46,18 @@ Additions (ordered by the repositioning — the first two are what make the pitc
 - Regression test + demo: a recursive-fork / high-volume target whose capture stays valid and self-reports drops, where nested-JSON sandboxes silently truncate (arXiv 2511.04472, CVE-2025-61301/-61303). Flat append-only NDJSON is the design property that makes this hold.
 
 **Artifact capture** — *shipped 2026-07 (v0.2)*
-- ✅ `--capture-artifacts` copies files the target created/modified into `artifacts/<sha256>` (content-addressed), bounded by `--artifact-max-size` / `--artifact-max-total` / `--artifact-max-count`.
-- ✅ An `artifacts.json` index records each file's SHA-256, size, mode, source path(s), and status; `integrity.artifacts_index_sha256` puts it under the signature; `vishaya verify` checks every artifact's content; `vishaya artifacts` lists them.
+- **Done** — `--capture-artifacts` copies files the target created/modified into `artifacts/<sha256>` (content-addressed), bounded by `--artifact-max-size` / `--artifact-max-total` / `--artifact-max-count`.
+- **Done** — An `artifacts.json` index records each file's SHA-256, size, mode, source path(s), and status; `integrity.artifacts_index_sha256` puts it under the signature; `vishaya verify` checks every artifact's content; `vishaya artifacts` lists them.
 - Limitation (v0.2): end-of-capture snapshot — a file created *and deleted* mid-run is recorded (`missing_at_finalize`) but not extracted. Copy-on-close is a future enhancement.
 
 **Bundle diffing** — *shipped 2026-07*
-- ✅ `vishaya diff a.vishaya b.vishaya` — **semantic** comparison (compares behaviour sets, not raw events, so PIDs/timestamps/addresses don't create noise).
+- **Done** — `vishaya diff a.vishaya b.vishaya` — **semantic** comparison (compares behaviour sets, not raw events, so PIDs/timestamps/addresses don't create noise).
 - Shows, per category: executed binaries, files created/deleted/renamed, DNS names, HTTP requests, and network endpoints only-in-A vs only-in-B. Exit 0 = identical, 1 = differs.
 - Useful for detecting environment-sensitive malware behavior across runs.
 - Follow-on (deferred, B-03): a `--normalize` bundle transform for path-randomness canonicalization; the diff already normalizes identifiers by comparing semantic sets.
 
 **DNS + HTTP enhancements**
-- `sendmsg`/`recvmsg` payload capture (adds iovec walking in BPF)
+- Multi-segment iovec payload capture (walk beyond the first `iovec`/message in BPF; single-segment is already captured)
 - HTTP header enrichment (User-Agent, Content-Type)
 - DNS TTL correlation across query/answer pairs
 
@@ -73,7 +74,7 @@ Additions (ordered by the repositioning — the first two are what make the pitc
 **Better UX**
 - `vishaya --version` already prints the tool version; extend it to also show the supported schema major
 - `vishaya capture --dry-run` prints what would be captured without running the target
-- ✅ `vishaya summary` — one-screen verdict (trust + target + counts + tree + network + files) — *shipped 2026-07*
+- **Done** — `vishaya summary` — one-screen verdict (trust + target + counts + tree + network + files) — *shipped 2026-07*
 - Colored output where appropriate (with `--no-color` opt-out)
 
 **Bundle format extensions**
