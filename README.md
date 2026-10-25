@@ -168,23 +168,31 @@ The build produces `build/vishaya` (the CLI) plus `build/isolation_probe` and `b
 sudo ./build/vishaya capture --target /usr/bin/curl --capture-artifacts \
     --output /tmp/curl.vishaya -- https://example.com
 
+# Preview the planned capture without launching anything (root not required for dry-run)
+./build/vishaya capture --dry-run --target /usr/bin/curl \
+    --output /tmp/curl.vishaya -- https://example.com
+
 # Inspect (no root)
 ./build/vishaya summary   /tmp/curl.vishaya    # one-screen verdict — start here
+./build/vishaya summary --json /tmp/curl.vishaya # machine-friendly JSON
 ./build/vishaya tree      /tmp/curl.vishaya
+./build/vishaya tree --json /tmp/curl.vishaya
 ./build/vishaya files     /tmp/curl.vishaya
 ./build/vishaya network   /tmp/curl.vishaya
 ./build/vishaya timeline  /tmp/curl.vishaya
 ./build/vishaya artifacts /tmp/curl.vishaya    # files captured with --capture-artifacts
+./build/vishaya artifacts --json /tmp/curl.vishaya
 
 # Compare two runs of the same sample — what changed? (exit 0 = identical, 1 = differs)
 ./build/vishaya diff   run-a.vishaya run-b.vishaya
 
 # Verify integrity + signature + artifacts (no root); optionally pin the signing key
 ./build/vishaya verify /tmp/curl.vishaya
+./build/vishaya verify --json /tmp/curl.vishaya
 ./build/vishaya verify /tmp/curl.vishaya --verify-key <base64-ed25519-pubkey>
 ```
 
-Add `--enable-syscalls` to a capture for raw syscall events (high volume; off by default).
+Add `--enable-syscalls` to a capture for raw syscall events (high volume; off by default). The CLI also supports `--json` on `summary` and `verify` for automation-friendly output, and `capture --dry-run` for a safe preview before running the target.
 
 ---
 
