@@ -19,6 +19,7 @@ struct CaptureArgs {
   std::vector<std::string> args;
   std::string              output          = "case.vishaya";
   std::string              cwd;
+  bool                     dry_run         = false;
   bool                     enable_syscalls = false;
   // Escape hatch: continue capturing HOST-WIDE if the loaded BPF object cannot
   // scope to the target cgroup (map missing). Off by default — capture refuses

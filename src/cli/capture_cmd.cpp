@@ -101,12 +101,51 @@ int envp_count() {
 } // namespace
 
 int run_capture(const CaptureArgs& args) {
-  if (::geteuid() != 0) {
-    log::error("vishaya capture must run as root (eBPF + cgroup v2 require it)");
-    return 1;
-  }
   if (args.target.empty()) {
     log::error("--target is required");
+    return 1;
+  }
+
+  // Dry-run checks: validate the target path without requiring root privileges,
+  // then print the planned capture configuration and exit cleanly.
+  if (args.dry_run) {
+    struct stat st{};
+    if (::stat(args.target.c_str(), &st) != 0) {
+      log::error("--target not found: " + args.target + " (" + std::strerror(errno) + ")");
+      return 1;
+    }
+    if (!S_ISREG(st.st_mode)) {
+      log::error("--target is not a regular file: " + args.target);
+      return 1;
+    }
+    if (::access(args.target.c_str(), X_OK) != 0) {
+      log::error("--target is not executable: " + args.target);
+      return 1;
+    }
+
+    std::cout << "vishaya capture --dry-run\n";
+    std::cout << "  target: " << args.target << "\n";
+    if (!args.args.empty()) {
+      std::cout << "  args:   ";
+      for (const auto& a : args.args) std::cout << a << ' ';
+      std::cout << "\n";
+    }
+    std::cout << "  cwd:    " << (args.cwd.empty() ? "/" : args.cwd) << "\n";
+    std::cout << "  output: " << args.output << "\n";
+    std::cout << "  capture-artifacts: " << (args.capture_artifacts ? "enabled" : "disabled") << "\n";
+    std::cout << "  syscalls: " << (args.enable_syscalls ? "enabled" : "disabled") << "\n";
+    std::cout << "  host-wide fallback: " << (args.allow_host_wide ? "allowed" : "refused") << "\n";
+    if (args.capture_artifacts) {
+      std::cout << "  artifact max-size: " << args.artifact_cfg.max_file_bytes << " bytes\n";
+      std::cout << "  artifact max-total: " << args.artifact_cfg.max_total_bytes << " bytes\n";
+      std::cout << "  artifact max-count: " << args.artifact_cfg.max_count << "\n";
+    }
+    std::cout << "  note: this would capture only the target process tree and descendants\n";
+    return 0;
+  }
+
+  if (::geteuid() != 0) {
+    log::error("vishaya capture must run as root (eBPF + cgroup v2 require it)");
     return 1;
   }
   // Validate the target up front so a bad path fails clearly here, rather than as

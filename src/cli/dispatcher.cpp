@@ -1,5 +1,6 @@
 #include "cli/dispatcher.h"
 
+#include "bundle/schema_version.h"
 #include "cli/capture_cmd.h"
 #include "common/log.h"
 #include "inspect/artifacts.h"
@@ -42,7 +43,11 @@ int dispatch(int argc, char** argv) {
   CLI::App app{
       "vishaya — Linux forensic capture and analysis (v0.2 pre-release)"};
   app.require_subcommand(1);
-  app.set_version_flag("--version", std::string("vishaya 0.2.0 (pre-release)"));
+  app.set_version_flag(
+      "--version",
+      std::string(vishaya::bundle::kToolName) + " " +
+          vishaya::bundle::kToolVersion + " (pre-release) | schema major " +
+          std::to_string(vishaya::bundle::kSchemaMajor));
 
   bool verbose = false;
   app.add_flag("-v,--verbose", verbose,
@@ -60,6 +65,8 @@ int dispatch(int argc, char** argv) {
                           "Output .vishaya bundle path (default: ./case.vishaya)");
   capture_cmd->add_option("--cwd", cap.cwd,
                           "Working directory for target (default: /)");
+  capture_cmd->add_flag("--dry-run", cap.dry_run,
+                        "Print what would be captured without running the target");
   capture_cmd->add_flag("--enable-syscalls", cap.enable_syscalls,
                         "Enable raw syscall capture (high volume; off by default)");
   capture_cmd->add_flag("--allow-host-wide", cap.allow_host_wide,
@@ -82,15 +89,19 @@ int dispatch(int argc, char** argv) {
   auto* summary_cmd =
       app.add_subcommand("summary", "One-screen verdict: trust, target, counts, network, files");
   std::string summary_bundle;
+  bool        summary_json = false;
   summary_cmd->add_option("bundle", summary_bundle, "Path to .vishaya bundle")->required();
-  summary_cmd->callback([&]() { result = vishaya::inspect::run_summary(summary_bundle); });
+  summary_cmd->add_flag("--json", summary_json, "Print a JSON summary instead of the human-readable table");
+  summary_cmd->callback([&]() { result = vishaya::inspect::run_summary(summary_bundle, summary_json); });
 
   // ---- tree --------------------------------------------------------------
   auto* tree_cmd =
       app.add_subcommand("tree", "Show process tree from a bundle");
   std::string tree_bundle;
+  bool        tree_json = false;
   tree_cmd->add_option("bundle", tree_bundle, "Path to .vishaya bundle")->required();
-  tree_cmd->callback([&]() { result = vishaya::inspect::run_tree(tree_bundle); });
+  tree_cmd->add_flag("--json", tree_json, "Print a JSON tree instead of the human-readable tree");
+  tree_cmd->callback([&]() { result = vishaya::inspect::run_tree(tree_bundle, tree_json); });
 
   // ---- files -------------------------------------------------------------
   auto* files_cmd =
@@ -129,20 +140,26 @@ int dispatch(int argc, char** argv) {
       app.add_subcommand("verify", "Verify a bundle's integrity and signature");
   std::string verify_bundle;
   std::string verify_key;
+  bool        verify_json = false;
   verify_cmd->add_option("bundle", verify_bundle, "Path to .vishaya bundle")->required();
   verify_cmd->add_option("--verify-key", verify_key,
                          "Require the bundle to be signed by this base64 Ed25519 public key");
+  verify_cmd->add_flag("--json", verify_json,
+                       "Print a JSON verdict instead of the human-readable summary");
   verify_cmd->callback(
-      [&]() { result = vishaya::inspect::run_verify(verify_bundle, verify_key); });
+      [&]() { result = vishaya::inspect::run_verify(verify_bundle, verify_key, verify_json); });
 
   // ---- artifacts ---------------------------------------------------------
   auto* artifacts_cmd =
       app.add_subcommand("artifacts", "List files captured into the bundle's artifacts/");
   std::string artifacts_bundle;
+  bool        artifacts_json = false;
   artifacts_cmd->add_option("bundle", artifacts_bundle, "Path to .vishaya bundle")
       ->required();
+  artifacts_cmd->add_flag("--json", artifacts_json,
+                         "Print JSON instead of the human-readable artifact table");
   artifacts_cmd->callback(
-      [&]() { result = vishaya::inspect::run_artifacts(artifacts_bundle); });
+      [&]() { result = vishaya::inspect::run_artifacts(artifacts_bundle, artifacts_json); });
 
   try {
     app.parse(argc, argv);
