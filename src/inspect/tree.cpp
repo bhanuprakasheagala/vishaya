@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <iostream>
+#include <nlohmann/json.hpp>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -75,11 +76,36 @@ void print_node(const std::unordered_map<int32_t, const vishaya::bundle::Process
 
 } // namespace
 
-int run_tree(const std::string& bundle_path) {
+int run_tree(const std::string& bundle_path, bool json_output) {
   try {
     vishaya::bundle::Reader    reader(bundle_path);
     reader.verify();  // spec §6/§9: verify integrity + signature at load (warns on failure)
     const auto&                tree = reader.process_tree();
+
+    if (json_output) {
+      nlohmann::json out = {
+          {"bundle_path", bundle_path},
+          {"root_pid", tree.root_pid},
+          {"processes", nlohmann::json::array()}
+      };
+      for (const auto& r : tree.processes) {
+        nlohmann::json node = {
+            {"tgid", r.tgid},
+            {"ppid", r.ppid},
+            {"pid", r.pid},
+            {"comm", scrub_for_terminal(r.comm)},
+            {"exec_path", scrub_for_terminal(r.exec_path)},
+            {"cmdline", scrub_for_terminal(r.cmdline)},
+            {"cwd", scrub_for_terminal(r.cwd)},
+            {"children", r.children}
+        };
+        if (r.exit_code.has_value()) node["exit_code"] = *r.exit_code;
+        if (r.end_ts_ns.has_value()) node["end_ts_ns"] = *r.end_ts_ns;
+        out["processes"].push_back(node);
+      }
+      std::cout << out.dump(2) << "\n";
+      return 0;
+    }
 
     std::unordered_map<int32_t, const vishaya::bundle::ProcessRecord*> by_tgid;
     for (const auto& r : tree.processes) by_tgid[r.tgid] = &r;
