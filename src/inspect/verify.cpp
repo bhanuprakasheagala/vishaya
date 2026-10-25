@@ -8,13 +8,48 @@
 #include <iostream>
 #include <string>
 
+#include <nlohmann/json.hpp>
+
 namespace vishaya::inspect {
 
-int run_verify(const std::string& bundle_path, const std::string& pinned_key_b64) {
+int run_verify(const std::string& bundle_path,
+               const std::string& pinned_key_b64,
+               bool               json_output) {
   try {
     vishaya::bundle::Reader reader(bundle_path);
     const auto& m      = reader.manifest();
     const auto  report = reader.verify();  // logs per-file/signature warnings to stderr
+
+    if (json_output) {
+      nlohmann::json out = {
+          {"bundle_path", bundle_path},
+          {"schema_version", m.schema_version},
+          {"tool", m.tool_name + " " + m.tool_version},
+          {"integrity_ok", report.integrity_ok},
+          {"signature_present", report.signature_present},
+          {"signature_ok", report.signature_ok},
+          {"overall_ok", report.ok()},
+          {"artifacts_index_ok", report.artifacts_index_ok},
+          {"artifacts_content_ok", report.artifacts_content_ok},
+          {"pinned_key_provided", !pinned_key_b64.empty()}
+      };
+      bool pinned_ok = pinned_key_b64.empty();
+      if (!report.signature_present) {
+        out["signature"] = "unsigned";
+        if (!pinned_key_b64.empty()) pinned_ok = false;
+      } else {
+        out["signature"] = report.signature_ok ? "valid" : "invalid";
+        out["key_fingerprint"] = vishaya::bundle::pubkey_fingerprint(m.sig.pubkey_b64);
+        if (!pinned_key_b64.empty()) {
+          const bool key_matches = (m.sig.pubkey_b64 == pinned_key_b64);
+          pinned_ok = key_matches && report.signature_ok;
+          out["pinned_key_match"] = key_matches;
+        }
+      }
+      out["verdict"] = (report.ok() && pinned_ok) ? "verified" : "failed";
+      std::cout << out.dump(2) << "\n";
+      return (report.ok() && pinned_ok) ? 0 : 1;
+    }
 
     // schema/tool are manifest strings from an attacker-controlled bundle → scrub.
     std::cout << "bundle:     " << bundle_path << "\n";

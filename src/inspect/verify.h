@@ -12,9 +12,12 @@
 namespace vishaya::inspect {
 
 // Verify integrity + signature of the bundle. If pinned_key_b64 is non-empty,
-// also require the bundle's signing key to equal it. Prints a verdict to stdout;
-// returns 0 only when integrity holds, any present signature is valid, and the
-// pin (if given) matches.
-int run_verify(const std::string& bundle_path, const std::string& pinned_key_b64);
+// also require the bundle's signing key to equal it. If json_output is true,
+// print a JSON object instead of the human-readable verdict. Returns 0 only when
+// integrity holds, any present signature is valid, and the pin (if given)
+// matches.
+int run_verify(const std::string& bundle_path,
+               const std::string& pinned_key_b64,
+               bool               json_output = false);
 
 } // namespace vishaya::inspect
