@@ -13,7 +13,8 @@
 namespace vishaya::inspect {
 
 // Print a compact one-screen summary of the bundle to stdout, led by a trust
-// line (integrity + signature). Returns 0 on success, non-zero on read error.
-int run_summary(const std::string& bundle_path);
+// line (integrity + signature). When json_output is true, print a JSON object
+// instead of the human summary. Returns 0 on success, non-zero on read error.
+int run_summary(const std::string& bundle_path, bool json_output = false);
 
 } // namespace vishaya::inspect

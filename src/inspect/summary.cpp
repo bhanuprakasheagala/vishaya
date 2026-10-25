@@ -8,6 +8,7 @@
 #include "inspect/render.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <iostream>
 #include <set>
@@ -57,6 +58,20 @@ void print_lines(const char* label, const UniqueList& u, size_t cap = 6) {
     std::cout << "    " << label << "  (+" << (u.items.size() - cap) << " more)\n";
 }
 
+std::string lower_copy(const std::string& s) {
+  std::string out = s;
+  std::transform(out.begin(), out.end(), out.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return out;
+}
+
+void add_unique_obs(std::vector<std::string>& obs, const std::string& entry) {
+  if (entry.empty()) return;
+  const std::string v = scrub_for_terminal(entry);
+  if (v.empty()) return;
+  if (std::find(obs.begin(), obs.end(), v) == obs.end()) obs.push_back(v);
+}
+
 // A short bounded process-tree print (root + descendants) under a line budget.
 void print_tree(const std::unordered_map<int32_t, const vishaya::bundle::ProcessRecord*>& by_tgid,
                 int32_t tgid, const std::string& prefix, bool is_last, int& budget) {
@@ -80,11 +95,61 @@ void print_tree(const std::unordered_map<int32_t, const vishaya::bundle::Process
 
 } // namespace
 
-int run_summary(const std::string& bundle_path) {
+int run_summary(const std::string& bundle_path, bool json_output) {
   try {
     vishaya::bundle::Reader reader(bundle_path);
     const auto& m      = reader.manifest();
     const auto  report = reader.verify();  // warnings (if any) go to stderr
+
+    if (json_output) {
+      nlohmann::json summary = {
+          {"bundle_path", bundle_path},
+          {"schema_version", m.schema_version},
+          {"tool", m.tool_name + " " + m.tool_version},
+          {"integrity_ok", report.integrity_ok},
+          {"signature_present", report.signature_present},
+          {"signature_ok", report.signature_ok},
+          {"overall_ok", report.ok()},
+          {"artifacts_index_ok", report.artifacts_index_ok},
+          {"artifacts_content_ok", report.artifacts_content_ok},
+          {"target", {"path", m.target.path, "sha256", m.target.sha256}},
+          {"capture", {"started_at", m.capture.started_at,
+                        "ended_at", m.capture.ended_at,
+                        "duration_seconds", m.capture.duration_seconds,
+                        "host", {"distro", m.capture.host.distro,
+                                  "kernel", m.capture.host.kernel,
+                                  "arch", m.capture.host.arch}}},
+          {"counts", {"events_total", m.counts.events_total,
+                       "events_dropped", m.counts.events_dropped}}
+      };
+
+      uint64_t n_process = 0, n_file = 0, n_network = 0, n_syscall = 0;
+      reader.for_each_event([&](const json& e) {
+        try {
+          const std::string fam = e.value("family", "");
+          const std::string kind = e.value("kind", "");
+          if (fam == "process") ++n_process;
+          else if (fam == "syscall") ++n_syscall;
+          else if (fam == "file") ++n_file;
+          else if (fam == "network") {
+            ++n_network;
+            if (kind == "http-request") {
+              summary["http_requests"] = summary.value("http_requests", 0) + 1;
+            }
+            if (kind == "dns-query" || kind == "dns-answer") {
+              summary["dns_events"] = summary.value("dns_events", 0) + 1;
+            }
+          }
+        } catch (const nlohmann::json::exception&) {}
+      });
+      summary["counts"]["process"] = n_process;
+      summary["counts"]["file"] = n_file;
+      summary["counts"]["network"] = n_network;
+      summary["counts"]["syscall"] = n_syscall;
+      summary["verdict"] = report.ok() ? "verified" : "failed";
+      std::cout << summary.dump(2) << "\n";
+      return report.ok() ? 0 : 1;
+    }
 
     // ---- aggregate the event stream once --------------------------------
     uint64_t n_process = 0, n_file = 0, n_network = 0, n_syscall = 0;
@@ -171,6 +236,9 @@ int run_summary(const std::string& bundle_path) {
     // ---- identity + counts ----------------------------------------------
     // target.path, timestamps, and host.* are manifest strings from an
     // attacker-controlled bundle → scrub before display (sha256 is hex).
+    std::cout << "  format    schema " << scrub_for_terminal(m.schema_version)
+              << "  | tool " << scrub_for_terminal(m.tool_name) << " "
+              << scrub_for_terminal(m.tool_version) << "\n";
     std::cout << "  target    " << scrub_for_terminal(m.target.path);
     if (m.target.sha256.size() >= 12)
       std::cout << "  sha256 " << m.target.sha256.substr(0, 12) << "…";
@@ -212,6 +280,52 @@ int run_summary(const std::string& bundle_path) {
       print_lines("renamed", renamed, 6);
       if (!opened.empty())
         std::cout << "    opened   " << opened.size() << " path(s)\n";
+    }
+
+    // ---- highlights -----------------------------------------------------
+    std::vector<std::string> observations;
+    if (!tree.processes.empty() && tree.processes.size() > 1) {
+      add_unique_obs(observations,
+                     "target spawned " + std::to_string(tree.processes.size() - 1) +
+                         " descendant process(es)");
+    }
+    if (!dns_disp.empty()) {
+      add_unique_obs(observations,
+                     "observed DNS lookups for " + std::to_string(dns_disp.size()) +
+                         " name(s)");
+    }
+    if (!http.empty()) {
+      add_unique_obs(observations,
+                     "observed HTTP activity for " + std::to_string(http.size()) +
+                         " request(s)");
+    }
+    if (!created.empty()) {
+      add_unique_obs(observations,
+                     "file creation observed for " + std::to_string(created.size()) +
+                         " path(s)");
+    }
+    if (!deleted.empty() || !renamed.empty()) {
+      add_unique_obs(observations,
+                     "file mutations or renames observed");
+    }
+    for (const auto& r : tree.processes) {
+      const std::string name = r.exec_path.empty() ? r.comm : r.exec_path;
+      const std::string lower = lower_copy(name);
+      if (lower.find("/bin/sh") != std::string::npos ||
+          lower.find("bash") != std::string::npos ||
+          lower.find("dash") != std::string::npos) {
+        add_unique_obs(observations, "shell execution observed");
+      }
+      if (lower.find("curl") != std::string::npos ||
+          lower.find("wget") != std::string::npos ||
+          lower.find("python") != std::string::npos ||
+          lower.find("perl") != std::string::npos) {
+        add_unique_obs(observations, "command or downloader activity observed");
+      }
+    }
+    if (!observations.empty()) {
+      std::cout << "\n  highlights\n";
+      for (const auto& obs : observations) std::cout << "    * " << obs << "\n";
     }
 
     // ---- artifacts -------------------------------------------------------
