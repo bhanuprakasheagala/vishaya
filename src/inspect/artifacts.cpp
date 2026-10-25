@@ -7,15 +7,31 @@
 #include <cstdint>
 #include <iomanip>
 #include <iostream>
+#include <nlohmann/json.hpp>
 #include <string>
 
 namespace vishaya::inspect {
 
-int run_artifacts(const std::string& bundle_path) {
+int run_artifacts(const std::string& bundle_path, bool json_output) {
   try {
     vishaya::bundle::Reader reader(bundle_path);
     reader.verify();  // integrity + signature + artifact warnings go to stderr
     const auto& arts = reader.artifacts();
+
+    if (json_output) {
+      nlohmann::json out = { {"bundle_path", bundle_path}, {"artifacts", nlohmann::json::array()} };
+      for (const auto& a : arts) {
+        nlohmann::json art = {
+            {"sha256", a.sha256},
+            {"size", a.size},
+            {"status", static_cast<int>(a.status)},
+            {"source_paths", a.source_paths}
+        };
+        out["artifacts"].push_back(art);
+      }
+      std::cout << out.dump(2) << "\n";
+      return 0;
+    }
 
     std::cout << "bundle: " << bundle_path << "\n\n";
     if (arts.empty()) {
