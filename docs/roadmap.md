@@ -72,8 +72,10 @@ Additions (ordered by the repositioning — the first two are what make the pitc
 - systemd unit for background captures (optional)
 
 **Better UX**
-- `vishaya --version` already prints the tool version; extend it to also show the supported schema major
-- `vishaya capture --dry-run` prints what would be captured without running the target
+- **Done** — `vishaya --version` prints the tool version and supported schema major.
+- **Done** — `vishaya capture --dry-run` prints what would be captured without running the target.
+- **Done** — `vishaya summary --json` and `vishaya verify --json` provide automation-friendly output while preserving the human-readable default.
+- **Done** — `vishaya tree --json` and `vishaya artifacts --json` provide machine-readable process and artifact views.
 - **Done** — `vishaya summary` — one-screen verdict (trust + target + counts + tree + network + files) — *shipped 2026-07*
 - Colored output where appropriate (with `--no-color` opt-out)
 

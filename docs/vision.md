@@ -85,3 +85,165 @@ Explicit, to prevent scope creep:
 
 Kept deliberately short here — the authoritative, decision-annotated roadmap (with the
 post-research keep/cut/defer calls) lives in [roadmap.md](roadmap.md).
+
+## 8. Product evolution ideas to sharpen uniqueness
+
+The core proposition is already strong: a single, scoped, portable, verifiable bundle for a suspect Linux binary. The next step is to make the project feel more like a forensic product than a protocol plus CLI. The following additions would improve usability, differentiation, and real-world trust without changing the mission.
+
+### 8.1 Case narrative / triage summary
+
+The bundle should not only store raw events; it should also produce a human-readable summary of the most important actions. A `case-report` or `assess` mode could automatically call out:
+
+- what binary was executed and under what arguments
+- which files were created, modified, renamed, or dropped
+- which network destinations were contacted
+- whether the target spawned a shell, downloaded content, or attempted persistence
+- what looks high-value versus low-value for the analyst
+
+This turns raw telemetry into a small investigation story and gives the project a more polished, analyst-facing feel.
+
+### 8.2 Semantic behavior intelligence
+
+The project already excels at process/file/network events. The next quality leap is behavior classification: identifying what the sample did, not just what events it emitted. Examples:
+
+- network exfiltration vs normal web fetch
+- shell execution leading to command-and-control activity
+- file staging followed by persistence attempts
+- artifact creation and later rename/delete behavior
+- repeated suspicious process lineage over multiple runs
+
+A risk-scored behavior summary would be especially useful for malware triage and repeated case comparison.
+
+### 8.3 Stronger chain-of-custody and provenance
+
+For real investigative use, the bundle should carry more than event logs and a signature. Add case metadata such as:
+
+- case ID / evidence ID
+- collection time and investigator identity
+- who verified the bundle
+- previous/next evidence references
+- optional attestation-backed verification through trusted keys or Sigstore-style provenance
+
+This matters because a good evidence bundle is not only tamper-evident — it also clearly communicates who created it and under what chain of custody it was handled.
+
+### 8.4 A lightweight HTML or local browser viewer
+
+The CLI is the right default, but a very small static viewer would make the project much more approachable for non-CLI stakeholders. A browser-based summary could show:
+
+- verification verdict
+- process tree
+- summary facts
+- file and network tables
+- timeline highlights
+- suspicious behavior cards
+
+This remains optional, but it is a strong communication tool for sharing a case with colleagues or stakeholders.
+
+### 8.5 Standard export formats for ecosystem interoperability
+
+To increase practical value, Vishaya should be able to export summaries in common forensic and security formats, for example:
+
+- STIX 2.x
+- OCSF / normalized event output
+- CSV or markdown case reports
+- MISP-compatible indicators
+
+This would help integrate the evidence into broader IR and CTI workflows without requiring teams to re-implement a custom parser.
+
+### 8.6 A gallery of “evidence stories”
+
+The repository already includes sample bundles; those could be turned into a gallery of real examples, such as:
+
+- command execution with network access
+- shell pipeline activity
+- file lifecycle and rename behavior
+- suspicious outbound HTTP contact
+- persistence attempts
+
+This would make the project far easier to understand for newcomers and would show exactly what kind of questions Vishaya answers best.
+
+### 8.7 UX improvements that reduce friction
+
+A few polish features would make the product feel much more mature:
+
+- `vishaya --version` showing schema major plus tool version
+- `capture --dry-run`
+- richer JSON output for automation
+- better shell completion scripts
+- `--no-color` and more concise default output
+- improved summary cards for high-value findings
+
+These are not core features, but they are the difference between a technical project and a usable product.
+
+### 8.8 Decision framework for Step 1: case summary / behavior intelligence
+
+This is the first enhancement worth doing because it addresses the biggest product gap: raw evidence is useful, but analysts need a short, trustworthy narrative before they dive into the event stream. The best version of this feature is not a new capture model or a deep AI classifier; it is a small, inspect-time summary layer that turns existing telemetry into a succinct case story.
+
+#### What it takes
+
+The project already has the ingredients for this feature:
+
+- the event stream already contains process, file, network, and syscall observations
+- process lineage is reconstructed in the bundle and already available for inspection
+- the current `summary` output already aggregates DNS/HTTP/file creation and descendant counts
+- the code path is already `O(N)` over the stream, with bounded display output and no extra persisted data model
+
+That means Step 1 is not “start from zero”; it is to formalize the heuristics and present them as a case-oriented summary. The implementation should focus on a bounded list of high-value signal types, such as:
+
+- shell execution observed
+- network contact to suspicious host(s)
+- HTTP or DNS activity observed
+- file creation, rename, or deletion patterns
+- descendant process count / process lineage expansion
+- persistence or staging indicators when present
+
+This should remain intentionally conservative and explicit. We should report observed behavior as `observed` or `suspected`, not as a hard conclusion like `malware confirmed`.
+
+#### Why the ROI is high
+
+The return is high because it improves the product at the exact place where users make a decision: the first few seconds of a case review. Analysts rarely need more than a short overview before deciding whether to inspect deeper. A case summary makes Vishaya feel like a real forensic product, not just a protocol + CLI. It also makes demos and onboarding much easier: a user can immediately see the story without having to understand the full event schema.
+
+For adoption, this matters more than raw feature count. The user experience becomes:
+
+- run capture
+- open bundle
+- see a defensible quick verdict and highlights
+- drill into process tree, network, files, timeline only if needed
+
+That is a much stronger product identity than “we can parse a lot of events.”
+
+#### Will it add weight or affect performance?
+
+If implemented correctly, the answer is no in any material way:
+
+- no capture-time overhead beyond the existing event scan
+- no meaningful bundle size increase
+- no new data model required at write time
+- no new dependency or external service
+- output remains bounded and small, even for large captures
+
+The right design is a read-time summary pass that uses the existing event stream, not a new per-event telemetry model. In other words, the cost is highly bounded and largely proportional to the already existing `summary` processing. This keeps the feature additive and low-risk while preserving the project's fast CLI-first workflow.
+
+The only way this feature becomes heavy is if we add expensive per-event classification, large stored metadata, or a new bundle schema just to support summary generation. That should be avoided. Keep it as an inspect-side heuristic layer: cheap, deterministic, and clearly labeled as evidence interpretation rather than proof.
+
+#### Recommended implementation stance
+
+The best version of Step 1 should be:
+
+- heuristic and advisory
+- bounded and explainable
+- output-first, not schema-first
+- present in `summary` as a short highlights block
+- safe to add without changing default behavior or breaking older bundles
+
+This preserves the project's existing principles: minimal scope, low risk, additive value, and strong forensic trust. It also makes the project feel more mature without drifting into heavier infrastructure or speculative intelligence features.
+
+### 8.9 The strongest product story
+
+The best strategic angle for Vishaya is this:
+
+> Vishaya is not a host monitor or fleet sensor. It is a portable forensic evidence bundle for a single suspect Linux target, signed, scoped, and inspectable by anyone without root or a daemon.
+
+This identity is compelling because it is narrow, honest, and unusually useful. The next wave of work should focus on making that identity feel more obviously “forensic product” and less like a raw event collector.
+
+This direction would preserve the project's existing strengths while making it easier to explain, easier to trust, and easier to use in real investigations.

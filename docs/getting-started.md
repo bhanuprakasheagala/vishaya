@@ -68,6 +68,19 @@ Anatomy of that command:
 - `--output /tmp/curl.vishaya` — where the bundle will be written.
 - Everything after `--` — arguments passed to the target binary (in this case, curl's URL).
 
+If you want to validate the command and target without launching anything, you can
+use the dry-run mode:
+
+```bash
+./build/vishaya capture --dry-run \
+    --target /usr/bin/curl \
+    --output /tmp/curl.vishaya \
+    -- https://example.com
+```
+
+This validates the target, prints the planned capture configuration, and exits
+without attaching probes or running the binary. It is safe to use without root.
+
 To also copy the files the target created or modified into the bundle, add
 `--capture-artifacts` (off by default). They're stored content-addressed under
 `artifacts/`, hashed, and integrity-checked by `verify`. Bounds are adjustable:
@@ -94,21 +107,25 @@ None of the inspect subcommands need root — the bundle is a plain file you can
 
 ```bash
 ./build/vishaya summary   /tmp/curl.vishaya    # start here
+./build/vishaya summary --json /tmp/curl.vishaya
 ./build/vishaya tree      /tmp/curl.vishaya
+./build/vishaya tree --json /tmp/curl.vishaya
 ./build/vishaya files     /tmp/curl.vishaya
 ./build/vishaya network   /tmp/curl.vishaya
 ./build/vishaya timeline  /tmp/curl.vishaya
 ./build/vishaya verify    /tmp/curl.vishaya    # integrity + signature verdict
+./build/vishaya verify --json /tmp/curl.vishaya
 ./build/vishaya diff      run-a.vishaya run-b.vishaya  # what changed between two runs
 ./build/vishaya artifacts /tmp/curl.vishaya    # files the target dropped/modified
+./build/vishaya artifacts --json /tmp/curl.vishaya
 ```
 
-- **`summary`** — the one-screen verdict: trust status (integrity + signature), target, event counts, a shallow process tree, notable DNS/HTTP/endpoints, and files created/deleted/renamed. Reach for it first.
+- **`summary`** — the one-screen verdict: trust status (integrity + signature), target, event counts, a shallow process tree, notable DNS/HTTP/endpoints, and files created/deleted/renamed. Reach for it first. Pass `--json` for a machine-readable verdict.
 - **`tree`** prints the process lineage rooted at your target, with commands and exit codes.
 - **`files`** prints every file operation (openat / unlinkat / renameat2) with PID, command name, operation, return value, and path.
 - **`network`** prints every network event: socket lifecycle (connect / accept / send / recv), plus decoded DNS queries/answers and plaintext HTTP requests/responses.
 - **`timeline`** prints all events in chronological order (wall-clock UTC) — the "everything, in the order it happened" view.
-- **`verify`** re-checks the bundle's integrity hashes and Ed25519 signature and prints a verdict; `--verify-key <b64>` additionally requires a specific signing key.
+- **`verify`** re-checks the bundle's integrity hashes and Ed25519 signature and prints a verdict; `--verify-key <b64>` additionally requires a specific signing key. Use `--json` for automation or CI systems.
 - **`diff`** semantically compares two bundles (e.g. the same sample run twice) and prints what each did that the other didn't. Exit 0 = identical, 1 = differs.
 - **`artifacts`** lists the files captured into `artifacts/` (content hash, size, status, source path) — present only if the bundle was captured with `--capture-artifacts`. Extract them with `zstd -d < bundle.vishaya | tar -x artifacts/` (files are named by SHA-256).
 
