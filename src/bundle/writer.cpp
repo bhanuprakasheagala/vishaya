@@ -12,6 +12,7 @@
 #include <archive_entry.h>
 #include <cerrno>
 #include <cstring>
+#include <filesystem>
 #include <fcntl.h>
 #include <fstream>
 #include <sys/stat.h>
@@ -131,6 +132,18 @@ void add_dir_entry(archive*           a,
 } // namespace
 
 void write_bundle(WriterInput& input) {
+  const std::filesystem::path bundle_path(input.bundle_path);
+  if (bundle_path.has_parent_path()) {
+    const std::filesystem::path parent = bundle_path.parent_path();
+    if (!parent.empty() && !std::filesystem::exists(parent)) {
+      std::error_code ec;
+      std::filesystem::create_directories(parent, ec);
+      if (ec) {
+        throw BundleError("create_directories(" + parent.string() + ") failed: " + ec.message());
+      }
+    }
+  }
+
   const std::string events_path   = input.scratch_dir + "/events.ndjson";
   const std::string tree_path     = input.scratch_dir + "/process_tree.json";
   const std::string manifest_path = input.scratch_dir + "/manifest.json";
