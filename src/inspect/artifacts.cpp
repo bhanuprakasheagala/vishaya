@@ -24,7 +24,7 @@ int run_artifacts(const std::string& bundle_path, bool json_output) {
         nlohmann::json art = {
             {"sha256", a.sha256},
             {"size", a.size},
- //           {"status", static_cast<int>(a.status)},
+            {"status", a.status},
             {"source_paths", a.source_paths}
         };
         out["artifacts"].push_back(art);
